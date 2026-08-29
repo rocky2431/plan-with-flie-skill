@@ -1,0 +1,20 @@
+{
+  "name": "task-state-with-files",
+  "version": "0.1.0",
+  "description": "Keep substantive Codex task state in relative owner-readable files and restore it after session lifecycle events.",
+  "author": {
+    "name": "rocky2431",
+    "url": "https://github.com/rocky2431"
+  },
+  "repository": "https://github.com/rocky2431/plan-with-flie-skill",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Task State With Files",
+    "shortDescription": "Recover long-task state from local files.",
+    "longDescription": "Adds a reusable Skill for file-backed task state and a non-blocking SessionStart Hook that restores relative local state after startup, resume, clear, or compaction.",
+    "developerName": "rocky2431",
+    "category": "Productivity",
+    "capabilities": ["Skills", "Hooks"],
+    "defaultPrompt": "Use $task-state-with-files to keep this substantive task recoverable across compaction and resume."
+  }
+}
