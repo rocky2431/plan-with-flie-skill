@@ -5,13 +5,16 @@ engine or a semantic completion oracle.
 
 ## Surfaces
 
-- The Skill owns the reusable workflow: when to create state, what it must contain,
-  when to checkpoint it, how to recover, and when to clean it up.
-- The Plugin owns distribution and the executable `SessionStart` lifecycle Hook.
-- The Hook only resolves, bounds, labels, and injects existing state. It never creates
-  semantic content, blocks stopping, or continues a task.
-- The state document remains the only canonical working artifact. The `.ref` file is a
-  disposable relative pointer.
+- The standard Skill owns the reusable workflow: when to create state, what it must
+  contain, when to checkpoint it, how to recover, and when to clean it up.
+- The Codex Plugin owns Codex distribution and its executable `SessionStart` Hook.
+- The user installer owns reviewed, reversible placement in Kimi, ZCode, Claude Code,
+  and Hermes. It does not own task semantics.
+- Host lifecycle adapters only resolve, bound, label, and inject existing state. They
+  never create semantic content, block stopping, or continue a task.
+- The state document remains the one canonical working artifact. The `.ref` file is a
+  disposable relative pointer; installation backups are recovery copies, not task
+  state.
 
 ## Locality and containment
 
@@ -31,15 +34,36 @@ it necessary.
 
 ## Recovery lifecycle
 
-`SessionStart` runs on `startup`, `resume`, `clear`, and `compact`. Missing state is
-silent. Invalid state produces a bounded advisory diagnostic. Valid state is rendered
-into labeled `additionalContext`, prioritizing `Next action` and `Not done / do not
-redo`, with a hard character ceiling.
+Codex, Claude Code, and ZCode restore through
+`SessionStart(startup|resume|clear|compact)`. Kimi exposes compaction separately, so it
+uses `SessionStart(startup|resume)` plus `PostCompact`. Missing state is silent. Invalid
+state produces a bounded advisory diagnostic. Valid state prioritizes `Next action`
+and `Not done / do not redo` under a hard character ceiling.
 
-The renderer states that recovery data is lower priority than current instructions,
+Hermes has no equally narrow post-compaction context-return event. Its Plugin and shell
+hook systems can inject at `pre_llm_call`, but that runs every turn. The package installs
+the standard Skill and retains manual recovery instead of silently adopting continuous
+injection. If Hermes later ships a dedicated, non-blocking post-compaction context
+event, it can receive the same adapter without changing state semantics.
+
+Every renderer states that recovery data is lower priority than current instructions,
 must be reconciled with the live workspace, and does not authorize automatic
-continuation or external effects. `TASK_STATE_DISABLED=1` makes the Hook silent for an
-unrelated one-shot invocation.
+continuation or external effects. `TASK_STATE_DISABLED=1` makes lifecycle adapters
+silent for an unrelated one-shot invocation.
+
+## Installation and rollback
+
+Each non-Codex host receives an independent copy of the same Skill at its native user
+path. Kimi's TOML gets one marker-delimited managed block. ZCode and Claude Code receive
+one managed `SessionStart` hook group identified by its bundled script command. Reruns
+replace only those managed entries, so installation is idempotent and foreign hooks
+remain intact.
+
+Before changing an existing Skill directory or configuration file, the installer copies
+it to a timestamped recovery directory. Writes are staged and atomically replaced.
+Uninstall removes only the four managed Skill paths and the package's own hook entries.
+The `doctor` command compares installed Skill trees with the reviewed source and checks
+the exact expected Hook count.
 
 ## Why this is narrower than planning-with-files
 
@@ -49,14 +73,14 @@ That project has accumulated valuable solutions for multi-platform adapters,
 three-file planning, per-turn injection, catchup from transcript stores, parallel plan
 selection, session attachment, attestation, ledgers, and optional continuation modes.
 
-This package keeps the parts required by the accepted Codex outcome:
+This package keeps only the mechanisms needed for the accepted outcome:
 
 - durable owner-readable state;
-- post-compaction and post-resume recovery;
+- post-compaction and post-resume recovery where the host exposes a correct event;
 - bounded, labeled injection;
 - relative locality and containment;
 - explicit one-shot opt-out;
-- Plugin and Skill installation paths with Hook trust review.
+- reversible Skill and Hook installation with a host-aware doctor.
 
 It omits per-turn injection, transcript scraping, attestation, phase counters, Stop
 gates, heartbeats, and auto-continuation. Those mechanisms add context cost or turn

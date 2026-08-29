@@ -1,4 +1,4 @@
-"""Resolve and render file-backed Codex task state.
+"""Resolve and render file-backed agent task state.
 
 Persisted state identities are always relative to the task root. Absolute paths are
 used internally only to prove that a candidate remains inside that root.

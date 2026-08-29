@@ -1,7 +1,7 @@
 {
   "name": "task-state-with-files",
-  "version": "0.1.0",
-  "description": "Keep substantive Codex task state in relative owner-readable files and restore it after session lifecycle events.",
+  "version": "0.2.0",
+  "description": "Keep substantive agent task state in relative owner-readable files and restore it through supported host lifecycle events.",
   "author": {
     "name": "rocky2431",
     "url": "https://github.com/rocky2431"
