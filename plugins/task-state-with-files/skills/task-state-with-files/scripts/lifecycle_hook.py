@@ -18,12 +18,9 @@ SESSION_START_SOURCES = {"startup", "resume", "clear", "compact"}
 def _event_is_supported(host: str, event: dict[str, object]) -> bool:
     event_name = event.get("hook_event_name")
     if host == "kimi":
-        if event_name == "PostCompact":
-            return True
-        return event_name == "SessionStart" and event.get("source") in {
-            "startup",
-            "resume",
-        }
+        # Kimi discards SessionStart/PostCompact output. Only this event
+        # appends recovery text before the next user-origin model request.
+        return event_name == "UserPromptSubmit"
     return (
         event_name == "SessionStart"
         and event.get("source") in SESSION_START_SOURCES

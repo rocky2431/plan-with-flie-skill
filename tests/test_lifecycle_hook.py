@@ -52,35 +52,45 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
     @staticmethod
     def write_state(root: Path, marker: str) -> None:
         state = root / "work" / "task-state.md"
-        state.parent.mkdir(parents=True)
+        state.parent.mkdir(parents=True, exist_ok=True)
         state.write_text(
             f"# Task State\n\n## Next action\n{marker}\n",
             encoding="utf-8",
         )
 
-    def test_kimi_post_compact_emits_plain_context(self) -> None:
+    def test_kimi_user_prompt_emits_plain_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self.write_state(root, "KIMI-RECOVERY-MARKER")
-            result = self.run_hook("kimi", root, event="PostCompact")
+            result = self.run_hook("kimi", root, event="UserPromptSubmit")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("KIMI-RECOVERY-MARKER", result.stdout)
         self.assertFalse(result.stdout.lstrip().startswith("{"))
 
-    def test_kimi_session_start_accepts_only_startup_and_resume(self) -> None:
+    def test_kimi_observation_hooks_do_not_claim_context_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            self.write_state(root, "KIMI-SESSION-MARKER")
-            startup = self.run_hook(
-                "kimi", root, event="SessionStart", source="startup"
-            )
-            unsupported = self.run_hook(
-                "kimi", root, event="SessionStart", source="compact"
-            )
+            self.write_state(root, "MUST-NOT-APPEAR")
+            for event, source in (("SessionStart", "startup"),
+                                  ("SessionStart", "resume"),
+                                  ("PostCompact", None), ("TurnStarted", None)):
+                with self.subTest(event=event, source=source):
+                    result = self.run_hook("kimi", root, event=event, source=source)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("", result.stdout)
 
-        self.assertIn("KIMI-SESSION-MARKER", startup.stdout)
-        self.assertEqual("", unsupported.stdout)
+    def test_kimi_each_prompt_reads_current_state_without_a_stale_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self.write_state(root, "FIRST-STATE")
+            first = self.run_hook("kimi", root, event="UserPromptSubmit")
+            self.write_state(root, "UPDATED-STATE")
+            second = self.run_hook("kimi", root, event="UserPromptSubmit")
+            self.assertIn("FIRST-STATE", first.stdout)
+            self.assertIn("UPDATED-STATE", second.stdout)
+            self.assertNotIn("FIRST-STATE", second.stdout)
+            self.assertLessEqual(len(second.stdout), 8001)
 
     def test_claude_and_zcode_emit_strict_session_start_json(self) -> None:
         for host in ("claude", "zcode"):
@@ -110,7 +120,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
 
     def test_missing_state_and_opt_out_are_silent_for_every_host(self) -> None:
         for host, event, source in (
-            ("kimi", "PostCompact", None),
+            ("kimi", "UserPromptSubmit", None),
             ("zcode", "SessionStart", "resume"),
             ("claude", "SessionStart", "resume"),
         ):

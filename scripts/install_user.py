@@ -31,9 +31,13 @@ KIMI_BLOCK_BEGIN = "# BEGIN task-state-with-files managed hooks"
 KIMI_BLOCK_END = "# END task-state-with-files managed hooks"
 
 
+def _kimi_root(home: Path) -> Path:
+    return Path(os.environ.get("KIMI_CODE_HOME") or home / ".kimi-code").expanduser()
+
+
 def _skill_destination(home: Path, host: str) -> Path:
     roots = {
-        "kimi": home / ".kimi" / "skills",
+        "kimi": _kimi_root(home) / "skills",
         "zcode": home / ".zcode" / "skills",
         "claude": home / ".claude" / "skills",
         "hermes": home / ".hermes" / "skills",
@@ -43,7 +47,7 @@ def _skill_destination(home: Path, host: str) -> Path:
 
 def _config_path(home: Path, host: str) -> Path | None:
     paths = {
-        "kimi": home / ".kimi" / "config.toml",
+        "kimi": _kimi_root(home) / "config.toml",
         "zcode": home / ".zcode" / "cli" / "config.json",
         "claude": home / ".claude" / "settings.json",
         "hermes": None,
@@ -52,8 +56,10 @@ def _config_path(home: Path, host: str) -> Path | None:
 
 
 def _hook_command(host: str) -> str:
+    if host == "kimi":
+        return ('python3 "${KIMI_CODE_HOME:-$HOME/.kimi-code}/skills/'
+                'task-state-with-files/scripts/lifecycle_hook.py" --host kimi')
     roots = {
-        "kimi": ".kimi",
         "zcode": ".zcode",
         "claude": ".claude",
     }
@@ -164,13 +170,7 @@ def _kimi_block() -> str:
     command = _hook_command("kimi")
     return f'''{KIMI_BLOCK_BEGIN}
 [[hooks]]
-event = "SessionStart"
-matcher = "^(startup|resume)$"
-command = '{command}'
-timeout = 10
-
-[[hooks]]
-event = "PostCompact"
+event = "UserPromptSubmit"
 command = '{command}'
 timeout = 10
 {KIMI_BLOCK_END}
@@ -420,7 +420,8 @@ def _hook_count(home: Path, host: str) -> int:
         if not isinstance(hooks, list):
             return 0
         return sum(
-            MANAGED_HOOK_FRAGMENT in str(item.get("command", ""))
+            item.get("event") == "UserPromptSubmit"
+            and item.get("command") == _hook_command("kimi")
             for item in hooks
             if isinstance(item, dict)
         )
@@ -455,9 +456,8 @@ def _doctor(home: Path, hosts: list[str]) -> dict[str, object]:
             hook_status = "not-applicable"
             recovery = "skill-only"
         else:
-            expected = 2 if host == "kimi" else 1
-            hook_status = "ok" if _hook_count(home, host) == expected else "missing-or-duplicate"
-            recovery = "native"
+            hook_status = "ok" if _hook_count(home, host) == 1 else "missing-or-duplicate"
+            recovery = "user-prompt" if host == "kimi" else "native"
         if skill_status != "ok" or hook_status not in {"ok", "not-applicable"}:
             healthy = False
         results[host] = {

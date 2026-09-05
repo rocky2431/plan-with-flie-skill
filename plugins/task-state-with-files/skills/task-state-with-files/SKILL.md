@@ -61,7 +61,10 @@ artifact identities, commands, and evidence; omit secrets and ephemeral narratio
 ## Recover safely
 
 When a supported non-blocking host adapter is installed, it restores a bounded excerpt
-through `SessionStart` or the host's dedicated post-compaction event. A Skill-only
+through `SessionStart` on Codex, Claude Code, and zCode, or `UserPromptSubmit` on
+Kimi Code. Kimi restores on the next user message, not immediately after autonomous
+compaction. Checkpoint before compaction and read the state file when needed; do not
+assume a hook reconstructed unwritten work. A Skill-only
 install has no automatic lifecycle recovery, so read the active state manually:
 
 ```bash

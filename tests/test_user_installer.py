@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
 
     @staticmethod
     def seed_configs(home: Path) -> None:
-        kimi = home / ".kimi" / "config.toml"
+        kimi = home / ".kimi-code" / "config.toml"
         kimi.parent.mkdir(parents=True)
         kimi.write_text('theme = "dark"\nhooks = []\n', encoding="utf-8")
 
@@ -113,19 +114,19 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             self.assertEqual(0, second.returncode, second.stderr)
 
             for relative in (
-                ".kimi/skills/task-state-with-files/SKILL.md",
+                ".kimi-code/skills/task-state-with-files/SKILL.md",
                 ".zcode/skills/task-state-with-files/SKILL.md",
                 ".claude/skills/task-state-with-files/SKILL.md",
                 ".hermes/skills/task-state-with-files/SKILL.md",
             ):
                 self.assertTrue((home / relative).is_file(), relative)
 
-            kimi_text = (home / ".kimi" / "config.toml").read_text(
+            kimi_text = (home / ".kimi-code" / "config.toml").read_text(
                 encoding="utf-8"
             )
             kimi = tomllib.loads(kimi_text)
             self.assertEqual("dark", kimi["theme"])
-            self.assertEqual(2, len(kimi["hooks"]))
+            self.assertEqual(["UserPromptSubmit"], [h["event"] for h in kimi["hooks"]])
             self.assertEqual(1, kimi_text.count("BEGIN task-state-with-files"))
             self.assertNotIn(str(home), kimi_text)
 
@@ -168,7 +169,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
         self.assertEqual(0, doctor.returncode, doctor.stderr)
         report = json.loads(doctor.stdout)
         self.assertTrue(report["ok"])
-        self.assertEqual("native", report["hosts"]["kimi"]["recovery"])
+        self.assertEqual("user-prompt", report["hosts"]["kimi"]["recovery"])
         self.assertEqual("native", report["hosts"]["zcode"]["recovery"])
         self.assertEqual("native", report["hosts"]["claude"]["recovery"])
         self.assertEqual("skill-only", report["hosts"]["hermes"]["recovery"])
@@ -190,7 +191,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
 
             self.assertEqual(2, result.returncode)
             for relative in (
-                ".kimi/skills/task-state-with-files",
+                ".kimi-code/skills/task-state-with-files",
                 ".zcode/skills/task-state-with-files",
                 ".claude/skills/task-state-with-files",
                 ".hermes/skills/task-state-with-files",
@@ -198,7 +199,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
                 self.assertFalse((home / relative).exists(), relative)
             self.assertNotIn(
                 "task-state-with-files",
-                (home / ".kimi" / "config.toml").read_text(encoding="utf-8"),
+                (home / ".kimi-code" / "config.toml").read_text(encoding="utf-8"),
             )
             self.assertNotIn(
                 "task-state-with-files",
@@ -221,7 +222,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             self.assertEqual(0, install.returncode, install.stderr)
             self.assertEqual(0, uninstall.returncode, uninstall.stderr)
             for relative in (
-                ".kimi/skills/task-state-with-files",
+                ".kimi-code/skills/task-state-with-files",
                 ".zcode/skills/task-state-with-files",
                 ".claude/skills/task-state-with-files",
                 ".hermes/skills/task-state-with-files",
@@ -234,7 +235,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             claude_text = (home / ".claude" / "settings.json").read_text(
                 encoding="utf-8"
             )
-            kimi_text = (home / ".kimi" / "config.toml").read_text(
+            kimi_text = (home / ".kimi-code" / "config.toml").read_text(
                 encoding="utf-8"
             )
             self.assertIn("existing-zcode.py", zcode_text)
@@ -243,6 +244,53 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             self.assertNotIn("task-state-with-files", zcode_text)
             self.assertNotIn("task-state-with-files", claude_text)
             self.assertNotIn("task-state-with-files", kimi_text)
+
+    def test_kimi_custom_root_migrates_old_hooks_and_executes_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            custom = home / "custom kimi home"
+            custom.mkdir()
+            config = custom / "config.toml"
+            config.write_text('''theme = "dark"
+[[hooks]]
+event = "UserPromptSubmit"
+command = "echo foreign-hook"
+# BEGIN task-state-with-files managed hooks
+[[hooks]]
+event = "SessionStart"
+command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
+[[hooks]]
+event = "PostCompact"
+command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
+# END task-state-with-files managed hooks
+''')
+            env = {**os.environ, "KIMI_CODE_HOME": str(custom)}
+            args = [sys.executable, str(INSTALLER), "install", "--home", str(home), "--hosts", "kimi"]
+            for _ in range(2):
+                install = subprocess.run(args, env=env, capture_output=True, text=True)
+                self.assertEqual(0, install.returncode, install.stderr)
+            hooks = tomllib.loads(config.read_text())["hooks"]
+            self.assertEqual(["UserPromptSubmit", "UserPromptSubmit"], [h["event"] for h in hooks])
+            self.assertEqual("echo foreign-hook", hooks[0]["command"])
+            workspace = home / "project"
+            (workspace / "work").mkdir(parents=True)
+            (workspace / "work/task-state.md").write_text("## Next action\nCUSTOM-ROOT-RECOVERY\n")
+            if os.name == "posix":  # User hook commands are documented for POSIX hosts.
+                result = subprocess.run(hooks[1]["command"], shell=True, cwd=workspace, env=env,
+                                        input=json.dumps({"hook_event_name": "UserPromptSubmit", "cwd": str(workspace)}),
+                                        text=True, capture_output=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn("CUSTOM-ROOT-RECOVERY", result.stdout)
+            self.assertFalse((home / ".kimi").exists())
+            self.assertFalse((home / ".kimi-code").exists())
+            args[2] = "doctor"
+            doctor = subprocess.run(args + ["--json"], env=env, capture_output=True, text=True)
+            self.assertEqual(0, doctor.returncode, doctor.stderr)
+            # A right script on the wrong event must not pass the doctor.
+            config.write_text(config.read_text().replace('event = "UserPromptSubmit"', 'event = "PostCompact"'))
+            stale = subprocess.run(args + ["--json"], env=env, capture_output=True, text=True)
+            self.assertEqual(1, stale.returncode)
+
 
 
 if __name__ == "__main__":

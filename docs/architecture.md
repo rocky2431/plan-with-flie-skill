@@ -35,8 +35,11 @@ it necessary.
 ## Recovery lifecycle
 
 Codex, Claude Code, and ZCode restore through
-`SessionStart(startup|resume|clear|compact)`. Kimi exposes compaction separately, so it
-uses `SessionStart(startup|resume)` plus `PostCompact`. Missing state is silent. Invalid
+`SessionStart(startup|resume|clear|compact)`. Kimi uses `UserPromptSubmit`; its
+`SessionStart` and `PostCompact` return values do not reach model context. Each user
+message rereads current state without a persistent deduplication cache, so compaction
+cannot strand a previously injected excerpt behind a stale delivery flag. This does
+not provide immediate recovery during autonomous compaction. Missing state is silent. Invalid
 state produces a bounded advisory diagnostic. Valid state prioritizes `Next action`
 and `Not done / do not redo` under a hard character ceiling.
 
@@ -63,7 +66,9 @@ Before changing an existing Skill directory or configuration file, the installer
 it to a timestamped recovery directory. Writes are staged and atomically replaced.
 Uninstall removes only the four managed Skill paths and the package's own hook entries.
 The `doctor` command compares installed Skill trees with the reviewed source and checks
-the exact expected Hook count.
+the expected Hook registration. For Kimi it checks the actual event and command,
+not merely that two obsolete entries still exist. This is installation verification,
+not proof of live context delivery.
 
 ## Why this is narrower than planning-with-files
 
@@ -82,7 +87,7 @@ This package keeps only the mechanisms needed for the accepted outcome:
 - explicit one-shot opt-out;
 - reversible Skill and Hook installation with a host-aware doctor.
 
-It omits per-turn injection, transcript scraping, attestation, phase counters, Stop
+It omits injection before every model step, transcript scraping, attestation, phase counters, Stop
 gates, heartbeats, and auto-continuation. Those mechanisms add context cost or turn
 mechanical observations into semantic control. They should be introduced only for a
 named reproduced failure with a clear repair path.

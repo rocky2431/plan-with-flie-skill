@@ -1,0 +1,13 @@
+{
+  "name": "task-state-with-files",
+  "version": "0.2.1",
+  "description": "Recover bounded task state before user prompts. Kimi SessionStart and PostCompact output is not injected into model context.",
+  "skills": ["./skills"],
+  "hooks": [
+    {
+      "event": "UserPromptSubmit",
+      "command": "python3 \"./skills/task-state-with-files/scripts/lifecycle_hook.py\" --host kimi",
+      "timeout": 10
+    }
+  ]
+}

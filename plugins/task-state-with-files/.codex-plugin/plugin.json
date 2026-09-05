@@ -1,6 +1,6 @@
 {
   "name": "task-state-with-files",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Keep substantive agent task state in relative owner-readable files and restore it through supported host lifecycle events.",
   "author": {
     "name": "rocky2431",

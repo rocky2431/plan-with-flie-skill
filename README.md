@@ -5,22 +5,30 @@ below the current task directory. Native, non-blocking recovery adapters are pro
 where a host exposes a lifecycle event that can reach the next model request.
 
 The package intentionally has no `Stop` Hook, goal loop, heartbeat, semantic
-completion gate, per-turn reinjection, or automatic continuation.
+completion gate or automatic continuation. Kimi recovery runs on user messages.
 
 ## Host support
 
-| Host | Installation | Automatic recovery | Tested locally |
-|---|---|---|---|
-| Codex | Marketplace Plugin | `SessionStart(startup|resume|clear|compact)` | installed Plugin |
-| Claude Code | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` | 2.1.251 |
-| ZCode | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` | 0.16.5 |
-| Kimi Code | User Skill + user Hooks | `SessionStart(startup|resume)` + `PostCompact` | 1.49.0 |
-| Hermes | User Skill | manual file recovery | 0.20.6 |
+| Host | Installation | Automatic recovery |
+|---|---|---|
+| Codex | Marketplace Plugin | `SessionStart(startup|resume|clear|compact)` |
+| Claude Code | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` |
+| ZCode | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` |
+| Kimi Code | Native plugin or user Skill + Hook | `UserPromptSubmit`, before the next user-origin request |
+| Hermes | User Skill | manual file recovery |
 
 Hermes deliberately remains Skill-only. Its dynamic context hook is `pre_llm_call`, a
 per-turn surface rather than a dedicated post-compaction recovery event. Installing a
 continuous injector merely for feature parity would add recurring context cost and
 would violate this package's narrow recovery boundary.
+
+Kimi Code 0.41.0 executes `SessionStart` and `PostCompact` scripts but discards
+returned recovery text. This package uses `UserPromptSubmit` to inject the latest
+bounded state (up to 8,000 characters) whenever the user sends a message. The text
+also appears in Kimi's UI. It does not restore immediately after autonomous
+compaction without a new user message. Native journal recovery is separate.
+See [Kimi's hook contract](https://www.kimi.com/code/docs/kimi-code-cli/customization/hooks.html).
+OpenAI/Anthropic API compatibility does not imply identical client hook behavior.
 
 ## State locations
 
@@ -67,6 +75,12 @@ It merges one managed recovery entry into Kimi, ZCode, and Claude Code without
 replacing unrelated configuration. Existing Skill copies and configuration files are
 copied to `~/.local/state/task-state-with-files/backups/<timestamp>-install/` before
 mutation. No login, model, provider, MCP, or credential setting is changed.
+
+Kimi uses `$KIMI_CODE_HOME/skills` and `$KIMI_CODE_HOME/config.toml`, defaulting to
+`~/.kimi-code`. Reinstalling replaces this package's legacy `SessionStart` and
+`PostCompact` block at the selected root with one `UserPromptSubmit` hook. The old
+Python `kimi-cli` directory `~/.kimi` is not migrated or deleted by this installer.
+Choose the native plugin or the user installer, not both, to avoid duplicate hooks.
 
 Restart each CLI after installation. Remove only this package's managed entries with:
 
@@ -133,3 +147,13 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 CI runs the same suite on Linux, macOS, and Windows. The current cross-host Hook
 commands are installed for the local POSIX CLI environment; Codex retains its separate
 Windows hook command.
+
+For the native Kimi transport smoke (requires `kimi` on PATH):
+
+```bash
+python3 tests/probe_kimi_recovery.py
+```
+
+The probe uses an isolated Kimi home and a local stub model endpoint. It checks
+that recovery reaches the actual host model request; it does not test model
+judgment or unattended post-compaction execution.
