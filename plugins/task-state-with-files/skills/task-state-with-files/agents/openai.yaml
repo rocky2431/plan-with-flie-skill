@@ -1,4 +1,4 @@
 interface:
   display_name: "Task State with Files"
-  short_description: "Recover substantive task state after context loss"
-  default_prompt: "Use $task-state-with-files to keep this multi-step task recoverable."
+  short_description: "Continue tasks from durable understanding and evidence"
+  default_prompt: "Use $task-state-with-files to preserve this task's intent, understanding, judgments, evidence, and next step across compaction and handoffs."

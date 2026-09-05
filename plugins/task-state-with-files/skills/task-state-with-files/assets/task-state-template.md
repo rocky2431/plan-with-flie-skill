@@ -1,37 +1,40 @@
-# Task State
+# Task: {{TASK_ID}}
 
-## Objective and scope
+Record: `{{STATE_PATH}}` (paths below are relative to the task root).
+
+## Current understanding
+
+### Intent and outcome
 
 {{OBJECTIVE}}
 
-## Done condition
+- Observable completion: not yet defined.
+- Material constraints and user corrections: not yet recorded.
 
-- [ ] Define observable completion before implementation.
+### Working understanding
 
-## Constraints and approvals
+- Established facts and their evidence: none yet.
+- Current approach and its rationale: not yet established.
+- Assumptions and open questions: not yet identified.
 
-- Record only constraints that materially affect the task.
+### Plan and progress
 
-## Current state
+Define useful steps from the actual task. Give each a stable label, intended result,
+status, and evidence needed to finish. Detail the current step; keep uncertain later
+steps coarse. No work has been verified yet.
 
-- [ ] Task state initialized.
+### Next action
 
-## Decisions and evidence
+Clarify the observable outcome and current understanding from the actual request.
 
-- No durable decisions recorded yet.
+## Judgments and corrections
 
-## Actions and verification
+No consequential judgments recorded yet. For each meaningful change, connect the
+observation or user correction to the resulting judgment and its effect on the next
+action. Preserve rejected approaches only with their evidence and revisit conditions.
 
-- No actions verified yet.
+## Evidence and artifacts
 
-## Blockers and attempted fixes
-
-- None.
-
-## Next action
-
-Replace this line with the single next concrete action before leaving the task.
-
-## Not done / do not redo
-
-- Nothing recorded yet.
+No artifacts or checks recorded yet. Keep accessible relative paths, exact identifiers,
+commands and working directories, observed results, and the revision or conditions that
+make those results applicable. Distinguish partial implementation from verified delivery.

@@ -1,159 +1,177 @@
 # Task State with Files for Agent CLIs
 
-A portable Agent Skill that keeps substantive task progress in an owner-readable file
-below the current task directory. Native, non-blocking recovery adapters are provided
-where a host exposes a lifecycle event that can reach the next model request.
+A portable Agent Skill for carrying task understanding across long work, context
+compaction, and agent handoffs. One working note connects the user's intent, what has
+been learned and why, execution progress, and the next useful action.
 
-The package intentionally has no `Stop` Hook, goal loop, heartbeat, semantic
-completion gate or automatic continuation. Kimi recovery runs on user messages.
+## What the note preserves
 
-## Host support
+- **Current understanding:** intended outcome, constraints and user corrections,
+  established facts, assumptions, approach, step progress, and next action.
+- **Judgments and corrections:** evidence-backed decisions, rejected approaches,
+  feedback that changed the plan, and conditions for revisiting a conclusion.
+- **Evidence and artifacts:** accessible files, source identifiers, commands and results,
+  and the conditions under which a claim was verified.
 
-| Host | Installation | Automatic recovery |
-|---|---|---|
-| Codex | Marketplace Plugin | `SessionStart(startup|resume|clear|compact)` |
-| Claude Code | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` |
-| ZCode | User Skill + user Hook | `SessionStart(startup|resume|clear|compact)` |
-| Kimi Code | Native plugin or user Skill + Hook | `UserPromptSubmit`, before the next user-origin request |
-| Hermes | User Skill | manual file recovery |
+For example, a retry that disproves an ordering assumption is progress even before code
+changes. Record the observation and its effect on the approach. A code change awaiting
+its required check remains in progress. These distinctions let the receiving agent
+continue from supported conclusions and unfinished work.
 
-Hermes deliberately remains Skill-only. Its dynamic context hook is `pre_llm_call`, a
-per-turn surface rather than a dedicated post-compaction recovery event. Installing a
-continuous injector merely for feature parity would add recurring context cost and
-would violate this package's narrow recovery boundary.
+The Skill calls for concise, verifiable judgment summaries. Update affected portions as
+understanding changes; preserve uncertainty and important corrections. It does not ask
+for private internal reasoning, transcripts, or a new summary of the entire task every turn.
+See [the working-note examples](plugins/task-state-with-files/skills/task-state-with-files/references/working-notes.md).
 
-Kimi Code 0.41.0 executes `SessionStart` and `PostCompact` scripts but discards
-returned recovery text. This package uses `UserPromptSubmit` to inject the latest
-bounded state (up to 8,000 characters) whenever the user sends a message. The text
-also appears in Kimi's UI. It does not restore immediately after autonomous
-compaction without a new user message. Native journal recovery is separate.
-See [Kimi's hook contract](https://www.kimi.com/code/docs/kimi-code-cli/customization/hooks.html).
-OpenAI/Anthropic API compatibility does not imply identical client hook behavior.
+## Start or resume a task
 
-## State locations
+Resolve `<skill-dir>` from the loaded `SKILL.md` path exposed by the host:
 
-Session-scoped state is stored at `work/task-state.md`, relative to the event `cwd`.
-Repository-shared WIP may live at an established project path such as
-`docs/wip/<slug>.md`; `work/task-state.ref` then contains only that relative path.
+```bash
+python3 "<skill-dir>/scripts/task_state.py" init \
+  --task example --objective "Ship the observable outcome"
 
-Absolute bindings, parent traversal, symlink escape, dual state sources, and missing
-shared targets fail closed. Canonical absolute paths are used only inside the resolver
-to prove containment and are never written into task state or injected into model
-context.
+python3 "<skill-dir>/scripts/task_state.py" read --task example
 
-## Install Codex
+python3 "<skill-dir>/scripts/task_state.py" resolve --task example
+```
 
-The Codex Plugin includes both the Skill and its recovery Hook:
+`init --task` creates `.tasks/<task-id>.md` once. It never overwrites an existing record;
+read an existing ID and confirm it identifies the same task. IDs contain 1–64 lowercase
+letters, digits, or hyphens and start with a letter or digit. `read` returns the complete
+record; `resolve` returns JSON location/status metadata only.
+
+Fill the note from the actual request, then work in useful steps: read the current step
+and its evidence, act and verify, update the affected understanding and progress, and
+continue the authorized work. Checkpoint at meaningful changes, before handoff, and
+before leaving unfinished work. The Skill leaves semantic judgment to the agent.
+
+## Locations and selection
+
+New tasks use `.tasks/<task-id>.md`. Keep the same record across sessions and agents.
+Existing project notes can be read directly:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" read --file docs/wip/example.md
+```
+
+Without `--root`, discovery walks from the current directory to the nearest task marker
+or Git boundary, stopping at the user's home. A subdirectory can therefore recover its
+parent task. `--root <project-directory>` pins an exact root, including when another
+workspace is the intended source. Paths inside a task record are relative to its root.
+
+Without a task/file selector, a legacy `work/task-state.md` or `work/task-state.ref`
+takes precedence. Otherwise a single `.tasks/*.md` is selected. Multiple named records
+return an ambiguity diagnostic; choose explicitly. A missing or invalid explicit
+selection never falls back to another task.
+
+Compatibility with earlier releases is retained:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" init --objective "Legacy session task"
+python3 "<skill-dir>/scripts/task_state.py" bind docs/wip/example.md
+```
+
+`init` without `--task` retains the legacy session-file behavior. `bind` writes one
+relative path to `work/task-state.ref` and refuses a different existing binding or a
+coexisting session file. Absolute paths, parent traversal, missing targets, and symlink
+escapes are rejected. Explicit `--file` can still read an existing project record.
+
+Archive completed named notes according to project convention, or move them to
+`.tasks/archive/<task-id>.md`, outside active discovery. Archived notes remain available
+with `read --file`. Remove disposable session files and bindings when no unfinished work
+depends on them. Completion does not automatically promote task notes into global memory.
+
+## Multiple tasks and handoffs
+
+Select `--task` on each CLI call, or set `TASK_STATE_TASK=<task-id>` when launching a host
+so its recovery hooks select that task. `TASK_STATE_ROOT` pins the workspace. These
+variables affect `read`, `resolve`, and hooks; pass the ID explicitly to `init --task`.
+Explicit CLI selectors override environment selection, and `--root` overrides the root
+variable. A tool shell cannot change an already-running host's launch environment.
+
+Each task has one writer; collaborating workers return evidence for the owning agent to
+integrate. Do not rewrite a shared active binding to switch independent concurrent tasks.
+An unrelated one-shot host invocation can use `TASK_STATE_DISABLED=1` to suppress recovery.
+
+A handoff includes the task ID or relative record path, actual workspace, relevant
+revision and uncommitted artifacts, and next action. Verify the receiver can access the
+record and required evidence. Naming a task, writing a `.ref`, or creating a Git worktree
+does not transfer files. Use the authorized transfer mechanism for uncommitted/ignored
+records and artifacts; this package provides no automatic synchronization.
+
+## Host recovery
+
+| Host | Installation | Bundled recovery event | Context output |
+|---|---|---|---|
+| Codex | Marketplace Plugin | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
+| Claude Code | User Skill + Hook | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
+| ZCode | User Skill + Hook | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
+| Kimi Code | Native plugin or user Skill + Hook | `UserPromptSubmit` | plain stdout in model context and UI |
+| Hermes | User Skill | manual `read` | file content |
+
+Adapters use the same discovery, selection, and renderer. A record fitting the 8,000
+character context budget arrives intact. Larger records produce a **partial preview**
+of whole sections with an explicit instruction to read the complete file. The preview
+is not a semantic summary. Missing state is silent; ambiguity or invalid state returns
+an advisory diagnostic. Hooks never block stopping or schedule another turn.
+
+Tests exercise adapter subprocess contracts and recovery behavior. They do not establish
+that every installed host version delivers state to its next model request after a real
+compaction. See [host recovery](plugins/task-state-with-files/skills/task-state-with-files/references/host-recovery.md)
+for the validation boundary.
+
+## Install
+
+The Codex Plugin bundles both Skill and recovery Hook:
 
 ```bash
 codex plugin marketplace add rocky2431/plan-with-flie-skill
 codex plugin add task-state-with-files@rocky-task-state
 ```
 
-Review and trust the bundled Hook when Codex asks. For local development, add the
-repository checkout instead:
+For development, replace the marketplace source with a local reviewed checkout, such as
+`./plan-with-flie-skill`. Review and trust the bundled Hook when Codex asks.
+
+For Kimi, ZCode, Claude Code, and Hermes, run from a reviewed checkout:
 
 ```bash
-codex plugin marketplace add ./plan-with-flie-skill
-codex plugin add task-state-with-files@rocky-task-state
+python3 scripts/install_user.py install --hosts kimi,zcode,claude,hermes
+python3 scripts/install_user.py doctor --hosts kimi,zcode,claude,hermes
 ```
 
-## Install Kimi, ZCode, Claude Code, and Hermes
-
-Run the user-scope installer from a reviewed checkout:
+The installer copies the Skill into each host's native user directory and merges only
+its managed hook entries. Existing Skill/config files are backed up under
+`~/.local/state/task-state-with-files/backups/<timestamp>-install/` before mutation.
+Restart the host after installation. Remove managed entries with:
 
 ```bash
-python3 scripts/install_user.py install \
-  --hosts kimi,zcode,claude,hermes
-
-python3 scripts/install_user.py doctor \
-  --hosts kimi,zcode,claude,hermes
+python3 scripts/install_user.py uninstall --hosts kimi,zcode,claude,hermes
 ```
 
-The installer copies the same standard Skill into each host's native user directory.
-It merges one managed recovery entry into Kimi, ZCode, and Claude Code without
-replacing unrelated configuration. Existing Skill copies and configuration files are
-copied to `~/.local/state/task-state-with-files/backups/<timestamp>-install/` before
-mutation. No login, model, provider, MCP, or credential setting is changed.
+Uninstall also creates recovery copies. A standalone installation of
+`plugins/task-state-with-files/skills/task-state-with-files` retains the workflow and CLI;
+automatic lifecycle recovery requires a supported adapter. Hermes remains Skill-only.
 
-Kimi uses `$KIMI_CODE_HOME/skills` and `$KIMI_CODE_HOME/config.toml`, defaulting to
-`~/.kimi-code`. Reinstalling replaces this package's legacy `SessionStart` and
-`PostCompact` block at the selected root with one `UserPromptSubmit` hook. The old
-Python `kimi-cli` directory `~/.kimi` is not migrated or deleted by this installer.
-Choose the native plugin or the user installer, not both, to avoid duplicate hooks.
+## Development and background
 
-Restart each CLI after installation. Remove only this package's managed entries with:
-
-```bash
-python3 scripts/install_user.py uninstall \
-  --hosts kimi,zcode,claude,hermes
-```
-
-Uninstall also creates recovery copies before removing the managed Skill directories.
-
-## Skill-only use
-
-The directory
-`plugins/task-state-with-files/skills/task-state-with-files` is a valid standalone
-Agent Skill. A Skill-only install retains the workflow and CLI but has no automatic
-lifecycle recovery unless the current host adapter is installed.
-
-## Task-state CLI
-
-Resolve `<skill-dir>` from the loaded `SKILL.md` path exposed by the host:
-
-```bash
-python3 "<skill-dir>/scripts/task_state.py" init \
-  --objective "Ship the observable outcome" --root .
-
-python3 "<skill-dir>/scripts/task_state.py" bind \
-  docs/wip/example.md --root .
-
-python3 "<skill-dir>/scripts/task_state.py" resolve --root .
-```
-
-`init` is idempotent. `bind` refuses to replace a different binding or coexist with a
-session-local state file.
-
-## One-shot and concurrent sessions
-
-An unrelated one-shot command may deliberately ignore active state in the same
-directory by setting `TASK_STATE_DISABLED=1` for that invocation.
-
-The locality key is the current `cwd`, not a hidden global session registry. Two
-independent tasks must therefore use separate task directories or Git worktrees.
-Sessions may share a bound WIP file only when they are collaborating on the same task.
-
-## Design choices
-
-This project was informed by
-[`OthmanAdi/planning-with-files`](https://github.com/OthmanAdi/planning-with-files),
-including its recovery, path-containment, parallel-task, opt-out, and
-install-verification work. It is an independent, host-adapted implementation rather
-than a vendored copy.
-
-See [the architecture note](docs/architecture.md) for the detailed boundaries and
-[the Skill's host reference](plugins/task-state-with-files/skills/task-state-with-files/references/host-recovery.md)
-for exact lifecycle behavior.
-
-## Development
-
-The implementation uses only the Python standard library.
+The implementation uses the Python standard library. Run:
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-CI runs the same suite on Linux, macOS, and Windows. The current cross-host Hook
-commands are installed for the local POSIX CLI environment; Codex retains its separate
-Windows hook command.
+CI runs this suite on Linux, macOS, and Windows. Non-Codex hook installation currently
+targets the local POSIX CLI environment; Codex has a separate Windows hook command.
 
-For the native Kimi transport smoke (requires `kimi` on PATH):
+This independent implementation was informed by
+[`OthmanAdi/planning-with-files`](https://github.com/OthmanAdi/planning-with-files).
+The [architecture note](docs/architecture.md) describes how working notes and thin
+recovery adapters fit together. There is no database, per-model-step injector, transcript
+scraper, Stop gate, heartbeat, or automatic continuation loop.
 
-```bash
-python3 tests/probe_kimi_recovery.py
-```
-
-The probe uses an isolated Kimi home and a local stub model endpoint. It checks
-that recovery reaches the actual host model request; it does not test model
-judgment or unattended post-compaction execution.
+Kimi Code 0.41.0 restores through `UserPromptSubmit` before the next user message,
+not immediately after autonomous compaction. Returned text from `SessionStart` and
+`PostCompact` does not enter model context. Installation honors `KIMI_CODE_HOME`,
+defaulting to `~/.kimi-code`; legacy `~/.kimi` data is not migrated or deleted.
+Choose the native plugin or user installer to avoid duplicate hooks.

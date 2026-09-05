@@ -22,9 +22,11 @@ class SessionStartHookTests(unittest.TestCase):
         source: str = "compact",
         *,
         disabled: bool = False,
+        pins: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        env = os.environ.copy()
+        env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
         env["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
+        env.update(pins or {})
         if disabled:
             env["TASK_STATE_DISABLED"] = "1"
         payload = {
@@ -68,6 +70,37 @@ class SessionStartHookTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
+
+    def test_nested_multi_task_recovery_uses_explicit_pins_without_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            tasks = root / ".tasks"
+            tasks.mkdir()
+            (tasks / "alpha.md").write_text("ALPHA-ONLY\n", encoding="utf-8")
+            (tasks / "beta.md").write_text("BETA-ONLY\n", encoding="utf-8")
+            nested = root / "src"
+            nested.mkdir()
+
+            ambiguous = self.run_hook(nested)
+            context = json.loads(ambiguous.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("Recovery skipped", context)
+            self.assertIn(".tasks/alpha.md", context)
+            self.assertNotIn("ALPHA-ONLY", context)
+
+            selected = self.run_hook(nested, pins={"TASK_STATE_TASK": "beta"})
+            context = json.loads(selected.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("BETA-ONLY", context)
+            self.assertNotIn("ALPHA-ONLY", context)
+            invalid = self.run_hook(nested, pins={"TASK_STATE_TASK": "absent"})
+            self.assertIn("Recovery skipped", invalid.stdout)
+            self.assertNotIn("BETA-ONLY", invalid.stdout)
+
+            # An explicit workspace pin also works when the event starts elsewhere.
+            elsewhere = root / "other-worktree"
+            elsewhere.mkdir()
+            (elsewhere / ".git").write_text("gitdir: fixture\n")
+            pinned = self.run_hook(elsewhere, pins={"TASK_STATE_ROOT": str(root), "TASK_STATE_TASK": "alpha"})
+            self.assertIn("ALPHA-ONLY", pinned.stdout)
 
     def test_non_object_event_is_silent_and_non_blocking(self) -> None:
         env = os.environ.copy()

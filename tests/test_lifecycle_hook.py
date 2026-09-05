@@ -29,6 +29,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
         event: str,
         source: str | None = None,
         disabled: bool = False,
+        pins: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         payload: dict[str, object] = {
             "session_id": "test-session",
@@ -37,7 +38,8 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
         }
         if source is not None:
             payload["source"] = source
-        env = os.environ.copy()
+        env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
+        env.update(pins or {})
         if disabled:
             env["TASK_STATE_DISABLED"] = "1"
         return subprocess.run(
@@ -149,6 +151,34 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("", result.stdout)
+
+    def test_all_adapters_honor_named_task_and_root_selection(self) -> None:
+        for host, event, source in (
+            ("kimi", "UserPromptSubmit", None),
+            ("zcode", "SessionStart", "compact"),
+            ("claude", "SessionStart", "resume"),
+        ):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as elsewhere:
+                root = Path(tmpdir)
+                (root / ".tasks").mkdir()
+                (root / ".tasks" / "selected.md").write_text("CORRECT-TASK\n", encoding="utf-8")
+                (root / ".tasks" / "unrelated.md").write_text("WRONG-TASK\n", encoding="utf-8")
+                (root / "src").mkdir()
+                ambiguous = self.run_hook(host, root / "src", event=event, source=source)
+                self.assertIn("Recovery skipped", ambiguous.stdout)
+                self.assertNotIn("CORRECT-TASK", ambiguous.stdout)
+
+                selected = self.run_hook(host, Path(elsewhere), event=event, source=source,
+                                         pins={"TASK_STATE_ROOT": str(root), "TASK_STATE_TASK": "selected"})
+                self.assertEqual(0, selected.returncode, selected.stderr)
+                context = selected.stdout if host == "kimi" else json.loads(selected.stdout)["hookSpecificOutput"]["additionalContext"]
+                self.assertIn("CORRECT-TASK", context)
+                self.assertNotIn("WRONG-TASK", context)
+
+                invalid = self.run_hook(host, root, event=event, source=source, pins={"TASK_STATE_TASK": "absent"})
+                self.assertEqual(0, invalid.returncode, invalid.stderr)
+                self.assertIn("Recovery skipped", invalid.stdout)
+                self.assertNotIn("CORRECT-TASK", invalid.stdout)
 
 
 if __name__ == "__main__":

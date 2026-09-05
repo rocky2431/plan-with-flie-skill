@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import sys
 
-from task_state_runtime import render_recovery_context, resolve_state
+from task_state_runtime import recovery_context_from_root
 
 
 SESSION_START_SOURCES = {"startup", "resume", "clear", "compact"}
@@ -41,21 +41,7 @@ def _emit(host: str, context: str) -> None:
 
 
 def _load_context(cwd: str) -> str | None:
-    resolution = resolve_state(Path(cwd))
-    if resolution.status == "missing":
-        return None
-    if resolution.status == "invalid":
-        return (
-            f"Recovery skipped: {resolution.message} "
-            "Fix the local state files before relying on recovery."
-        )
-
-    assert resolution.path is not None and resolution.relative_path is not None
-    state = resolution.path.read_text(encoding="utf-8")
-    return render_recovery_context(
-        relative_path=resolution.relative_path,
-        text=state,
-    )
+    return recovery_context_from_root(Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"), task=os.environ.get("TASK_STATE_TASK"))
 
 
 def build_parser() -> argparse.ArgumentParser:

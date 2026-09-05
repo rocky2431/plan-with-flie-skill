@@ -1,7 +1,7 @@
 {
   "name": "task-state-with-files",
-  "version": "0.2.1",
-  "description": "Keep substantive agent task state in relative owner-readable files and restore it through supported host lifecycle events.",
+  "version": "0.3.0",
+  "description": "Preserve task intent, evidence-backed judgments, reflections, and step progress in portable working notes across compaction and agent handoffs.",
   "author": {
     "name": "rocky2431",
     "url": "https://github.com/rocky2431"
@@ -10,11 +10,11 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Task State With Files",
-    "shortDescription": "Recover long-task state from local files.",
-    "longDescription": "Adds a reusable Skill for file-backed task state and a non-blocking SessionStart Hook that restores relative local state after startup, resume, clear, or compaction.",
+    "shortDescription": "Continue tasks from durable understanding and evidence.",
+    "longDescription": "Adds a working-note Skill and advisory recovery hooks. Keep user intent, judgments and corrections, evidence, and unfinished steps together; select named tasks and read full records after context loss or handoff.",
     "developerName": "rocky2431",
     "category": "Productivity",
     "capabilities": ["Skills", "Hooks"],
-    "defaultPrompt": "Use $task-state-with-files to keep this substantive task recoverable across compaction and resume."
+    "defaultPrompt": "Use $task-state-with-files to preserve this task's intent, current understanding, judgments, evidence, and next step across compaction and handoffs."
   }
 }

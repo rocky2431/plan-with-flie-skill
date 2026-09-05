@@ -142,6 +142,55 @@ class TaskStateResolutionTests(unittest.TestCase):
         self.assertEqual("missing", result.status)
         self.assertIsNone(result.path)
 
+    def test_nested_discovery_stops_at_the_nearest_git_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir).resolve()
+            task = root / ".tasks" / "feature.md"
+            task.parent.mkdir()
+            task.write_text("# The parent task\n", encoding="utf-8")
+            nested = root / "src" / "nested"
+            nested.mkdir(parents=True)
+
+            found = self.runtime.resolve_state(nested)
+            self.assertEqual("found", found.status)
+            self.assertEqual(root, found.root)
+            self.assertEqual(".tasks/feature.md", found.relative_path)
+
+            # A worktree's .git can be a file, not a directory.
+            (nested / ".git").write_text("gitdir: unused-in-this-fixture\n")
+            self.assertEqual("missing", self.runtime.resolve_state(nested).status)
+            self.assertEqual("found", self.runtime.resolve_state(root, task="feature", discover=False).status)
+
+    def test_multiple_tasks_require_selection_and_archives_are_not_active(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            tasks = root / ".tasks"
+            tasks.mkdir()
+            for name in ("alpha", "beta"):
+                (tasks / f"{name}.md").write_text(name, encoding="utf-8")
+            (tasks / "archive").mkdir()
+            (tasks / "archive" / "finished.md").write_text("finished", encoding="utf-8")
+
+            ambiguous = self.runtime.resolve_state(root)
+            self.assertEqual("ambiguous", ambiguous.status)
+            self.assertEqual((".tasks/alpha.md", ".tasks/beta.md"), ambiguous.candidates)
+            selected = self.runtime.resolve_state(root, task="beta")
+            self.assertEqual(".tasks/beta.md", selected.relative_path)
+            self.assertEqual("invalid", self.runtime.resolve_state(root, task="absent").status)
+            archived = self.runtime.resolve_state(root, state_file=".tasks/archive/finished.md")
+            self.assertEqual("found", archived.status)
+
+    def test_legacy_selection_stays_stable_when_named_tasks_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "work").mkdir()
+            (root / "work" / "task-state.md").write_text("legacy", encoding="utf-8")
+            (root / ".tasks").mkdir()
+            (root / ".tasks" / "feature.md").write_text("named", encoding="utf-8")
+
+            self.assertEqual("work/task-state.md", self.runtime.resolve_state(root).relative_path)
+            self.assertEqual(".tasks/feature.md", self.runtime.resolve_state(root, task="feature").relative_path)
+
 
 class RecoveryRenderingTests(unittest.TestCase):
     @classmethod
@@ -179,6 +228,46 @@ Run the compact recovery smoke.
         self.assertLessEqual(len(rendered), self.runtime.MAX_CONTEXT_CHARS)
         self.assertNotIn(str(Path.cwd()), rendered)
 
+    def test_small_record_is_intact_even_with_a_long_judgment_section(self) -> None:
+        body = "# Task\n\n## Current understanding\nStill in progress.\n\n## Judgments and corrections\n"
+        body += "Observed detail. " * 110
+        body += "\nThe earlier conclusion was refuted; verification is still pending.\n"
+        rendered = self.runtime.render_recovery_context(relative_path=".tasks/fix.md", text=body)
+
+        self.assertTrue(rendered.endswith(body))
+        self.assertNotIn("PARTIAL RECOVERY PREVIEW", rendered)
+
+    def test_large_preview_labels_omission_and_never_slices_a_section(self) -> None:
+        current = "## Current understanding\nThe latest user correction changes S2, not S1.\n"
+        oversized = "## Judgments and corrections\nBEGIN-LONG-SECTION\n" + "detail\n" * 2000 + "END-LONG-SECTION\n"
+        evidence = "## Evidence and artifacts\nE1: check the saved producer contract.\n"
+        rendered = self.runtime.render_recovery_context(
+            relative_path=".tasks/fix.md", text=current + oversized + evidence,
+        )
+
+        self.assertIn("PARTIAL RECOVERY PREVIEW", rendered)
+        self.assertIn("Read the complete record", rendered)
+        self.assertIn(current.strip(), rendered)
+        self.assertIn(evidence.strip(), rendered)
+        self.assertNotIn("BEGIN-LONG-SECTION", rendered)
+        self.assertNotIn("END-LONG-SECTION", rendered)
+        self.assertLessEqual(len(rendered), self.runtime.MAX_CONTEXT_CHARS)
+
+    def test_extreme_identity_keeps_the_recovery_output_bounded(self) -> None:
+        rendered = self.runtime.render_recovery_context(relative_path="a/" * 5000 + "task.md", text="state")
+        self.assertIn("Recovery skipped", rendered)
+        self.assertLessEqual(len(rendered), self.runtime.MAX_CONTEXT_CHARS)
+
+    def test_headings_inside_fenced_evidence_are_not_promoted_to_recovery_steps(self) -> None:
+        for fence in ("```markdown", "~~~markdown"):
+            with self.subTest(fence=fence):
+                body = "## Evidence and artifacts\n" + "detail\n" * 2000
+                body += f"{fence}\n## Next action\nEXAMPLE-ONLY-ACTION\n{fence[:3]}\n"
+                body += "## Current understanding\nThe real task is unfinished.\n"
+                rendered = self.runtime.render_recovery_context(relative_path=".tasks/example.md", text=body)
+                self.assertIn("The real task is unfinished", rendered)
+                self.assertNotIn("EXAMPLE-ONLY-ACTION", rendered)
+
 
 class TaskStateCliTests(unittest.TestCase):
     def run_cli(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -186,6 +275,7 @@ class TaskStateCliTests(unittest.TestCase):
             [sys.executable, str(CLI_PATH), *args, "--root", str(root)],
             text=True,
             capture_output=True,
+            env={key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")},
             check=False,
         )
 
@@ -217,6 +307,93 @@ class TaskStateCliTests(unittest.TestCase):
 
         self.assertEqual("docs/wip/shared.md\n", ref_text)
         self.assertFalse(os.path.isabs(ref_text.strip()))
+
+    def test_named_tasks_are_idempotent_and_read_returns_the_complete_selected_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first = self.run_cli(root, "init", "--task", "feature", "--objective", "Finish the requested behavior")
+            self.assertEqual(0, first.returncode, first.stderr)
+            task = root / ".tasks" / "feature.md"
+            content = task.read_text(encoding="utf-8")
+            self.assertIn("Finish the requested behavior", content)
+            self.assertNotIn("{{", content)
+            content += "\nObserved evidence. " * 1000 + "\nFinal caveat: acceptance is unverified.\n"
+            task.write_text(content, encoding="utf-8")
+            again = self.run_cli(root, "init", "--task", "feature", "--objective", "Must not overwrite")
+            second = self.run_cli(root, "init", "--task", "other", "--objective", "Unrelated task")
+            self.assertEqual(0, again.returncode, again.stderr)
+            self.assertEqual(0, second.returncode, second.stderr)
+            self.assertFalse((root / "work").exists())
+
+            ambiguous = self.run_cli(root, "resolve")
+            self.assertEqual(2, ambiguous.returncode)
+            self.assertEqual("ambiguous", json.loads(ambiguous.stdout)["status"])
+            selected = self.run_cli(root, "read", "--task", "feature")
+            self.assertEqual(0, selected.returncode, selected.stderr)
+            self.assertEqual(content, selected.stdout)
+            missing = self.run_cli(root, "read", "--task", "absent")
+            self.assertEqual(2, missing.returncode)
+            self.assertEqual("", missing.stdout)
+
+    def test_objective_text_is_not_reinterpreted_as_template_syntax(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            objective = "Support literal {{TASK_ID}} and {{STATE_PATH}} in user input."
+            result = self.run_cli(root, "init", "--task", "literal", "--objective", objective)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(objective, (root / ".tasks" / "literal.md").read_text(encoding="utf-8"))
+
+    def test_resolve_keeps_json_diagnostics_for_an_unavailable_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self.run_cli(Path(tmpdir) / "absent", "resolve")
+            self.assertEqual(2, result.returncode)
+            self.assertEqual("invalid", json.loads(result.stdout)["status"])
+            self.assertEqual("", result.stderr)
+
+    def test_read_uses_root_and_task_pins_but_explicit_file_takes_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as elsewhere:
+            root = Path(tmpdir)
+            (root / ".tasks").mkdir()
+            (root / ".tasks" / "selected.md").write_text("selected task\n", encoding="utf-8")
+            (root / "another file.md").write_text("explicit file\n", encoding="utf-8")
+            env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
+            env.update(TASK_STATE_ROOT=str(root), TASK_STATE_TASK="selected")
+            for args, expected in (([], "selected task\n"), (["--file", "another file.md"], "explicit file\n")):
+                with self.subTest(args=args):
+                    result = subprocess.run([sys.executable, str(CLI_PATH), "read", *args], cwd=elsewhere,
+                                            env=env, text=True, capture_output=True, check=False)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(expected, result.stdout)
+
+    def test_named_creation_cannot_escape_through_ids_or_symlinked_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as outside_dir:
+            root = Path(tmpdir)
+            invalid = self.run_cli(root, "init", "--task", "../escape", "--objective", "Not permitted")
+            self.assertEqual(2, invalid.returncode)
+            self.assertFalse((root / ".tasks").exists())
+            try:
+                (root / ".tasks").symlink_to(Path(outside_dir), target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+            escaped = self.run_cli(root, "init", "--task", "escape", "--objective", "Not permitted")
+            self.assertEqual(2, escaped.returncode)
+            self.assertEqual([], list(Path(outside_dir).iterdir()))
+
+    def test_handoff_requires_the_actual_record_in_the_receiving_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as source_dir, tempfile.TemporaryDirectory() as destination_dir:
+            source, destination = Path(source_dir), Path(destination_dir)
+            created = self.run_cli(source, "init", "--task", "handoff", "--objective", "Continue the same task")
+            self.assertEqual(0, created.returncode, created.stderr)
+            missing = self.run_cli(destination, "read", "--task", "handoff")
+            self.assertEqual(2, missing.returncode)
+            self.assertEqual("", missing.stdout)
+
+            content = (source / ".tasks" / "handoff.md").read_text(encoding="utf-8")
+            (destination / ".tasks").mkdir()
+            (destination / ".tasks" / "handoff.md").write_text(content, encoding="utf-8")
+            received = self.run_cli(destination, "read", "--task", "handoff")
+            self.assertEqual(0, received.returncode, received.stderr)
+            self.assertEqual(content, received.stdout)
 
 
 if __name__ == "__main__":

@@ -1,27 +1,66 @@
 # Host Recovery
 
-The Skill workflow is portable. Lifecycle recovery is host-specific and must use the
-smallest native surface that actually reaches the next model request.
+The Skill workflow and working-note format are portable. Automatic recovery uses a
+host-specific lifecycle event and returns advisory task context.
 
-| Host | User Skill location | Recovery boundary | Output contract |
+| Host | Skill location | Bundled event | Output contract |
 |---|---|---|---|
 | Codex | Installed Plugin Skill | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
 | Claude Code | `~/.claude/skills/task-state-with-files` | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
 | ZCode | `~/.zcode/skills/task-state-with-files` | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
-| Kimi Code | `$KIMI_CODE_HOME/skills/task-state-with-files` (default `~/.kimi-code`) | `UserPromptSubmit` | plain stdout appended to context and UI |
-| Hermes | `~/.hermes/skills/task-state-with-files` | Skill-only | manual file recovery |
+| Kimi Code | `$KIMI_CODE_HOME/skills/task-state-with-files` (default `~/.kimi-code`) | `UserPromptSubmit` | plain stdout in model context and UI |
+| Hermes | `~/.hermes/skills/task-state-with-files` | Skill-only | manual `read` |
 
-Hermes exposes dynamic context injection through `pre_llm_call`, but that is a per-turn
-surface rather than a dedicated post-compaction event. This package deliberately does
-not add continuous injection merely to make the feature matrix look uniform. The state
-file remains available, and the Skill tells Hermes how to recover it manually.
+## Locating the record
 
-All adapters are advisory and fail open. Missing state is silent. Invalid state returns
-a bounded diagnostic. Never add a `Stop` hook, heartbeat, goal loop, or incomplete-plan
-continuation to compensate for a host difference.
+All adapters discover the nearest task root from the event's `cwd`, stopping at a task
+marker or Git boundary. `TASK_STATE_ROOT` pins an exact workspace, and `TASK_STATE_TASK`
+selects a named `.tasks/<id>.md` record. Set these in the host's launch environment;
+changing a child tool shell's environment does not change the already-running host.
 
-`TASK_STATE_DISABLED=1` makes every bundled lifecycle adapter silent for an unrelated
-one-shot invocation.
+Without an explicit task, the legacy direct file/binding takes precedence; otherwise a
+single named record is selected. Several named records produce an ambiguity diagnostic.
+An invalid explicit selection never falls back to another task. Hooks do not infer task
+identity from titles, recent modification times, or task-note prose.
+
+An agent can always select and read manually using the loaded Skill path:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" read --task <task-id> --root <project-root>
+python3 "<skill-dir>/scripts/task_state.py" read --file docs/wip/example.md --root <project-root>
+```
+
+`resolve` reports metadata only. A missing receiving-side file requires locating or
+transferring the existing record and its necessary artifacts; changing the selector does
+not copy them.
+
+## Reading the recovery output
+
+A record that fits the 8,000-character budget with its header arrives intact. Larger
+records yield a labeled partial preview of complete sections. Read the whole selected
+record before making continuation decisions from a partial preview. Omitted sections
+may contain decisive corrections or unfinished checks.
+
+All adapters are advisory and fail open. Missing state is silent. Invalid/ambiguous
+state emits a bounded diagnostic. `TASK_STATE_DISABLED=1` silences every bundled adapter
+for an unrelated one-shot invocation. No adapter schedules continuation or blocks stopping.
+
+## Verification boundary
+
+Repository tests run the hook executables with realistic event payloads and check their
+output contracts, root/task selection, opt-out, and rejection behavior. Installer tests
+use temporary homes. These prove local script behavior, not a particular installed
+host's end-to-end recovery after context compaction.
+
+To establish that installed behavior, use an authorized disposable task, write a
+recognizable intent/correction/unfinished check, trigger the host's real compaction or
+resume boundary, and inspect whether the next model request receives and uses the state.
+Record host version, event, selected record, and observed continuation. A fresh agent
+reading a generated hook packet is a behavioral exercise, not that native lifecycle test.
+
+For missing recovery, inspect selection with `resolve`, read with `read`, then check the
+installed hook and host event/output contract. Do not compensate by adding a Stop hook,
+heartbeat, or per-model-step injector. Hermes currently uses this package's manual path.
 
 Kimi Code 0.41.0 ignores returned text from `SessionStart` and `PostCompact`.
 The adapter rereads state on every user message, including after resume, and emits

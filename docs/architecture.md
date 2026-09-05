@@ -1,93 +1,115 @@
 # Architecture
 
-This package treats file-backed state as recoverable working data, not as an execution
-engine or a semantic completion oracle.
+The package gives an agent a durable working record and a way to find and read it.
+Semantic understanding, judgment, reflection, and replanning belong to the agent.
+Discovery, containment, file selection, and bounded recovery are mechanical concerns.
 
-## Surfaces
+## The continuity record
 
-- The standard Skill owns the reusable workflow: when to create state, what it must
-  contain, when to checkpoint it, how to recover, and when to clean it up.
-- The Codex Plugin owns Codex distribution and its executable `SessionStart` Hook.
-- The user installer owns reviewed, reversible placement in Kimi, ZCode, Claude Code,
-  and Hermes. It does not own task semantics.
-- Host lifecycle adapters only resolve, bound, label, and inject existing state. They
-  never create semantic content, block stopping, or continue a task.
-- The state document remains the one canonical working artifact. The `.ref` file is a
-  disposable relative pointer; installation backups are recovery copies, not task
-  state.
+One task has one canonical note with three connected parts: current understanding,
+judgments and corrections, and evidence and artifacts. It records both changes in
+understanding and changes in the work product. The current view is updated locally;
+significant reversals retain a short evidence-backed explanation. Observations,
+hypotheses, decisions, verified progress, and unfinished work remain distinguishable.
 
-## Locality and containment
+The note is task data, not a private reasoning transcript or another authority source.
+The latest user request and live artifacts can invalidate old assumptions. Recovery
+should identify what changed and revisit dependent work while retaining conclusions
+whose supporting premises still hold.
 
-The event `cwd` is the task root. Session-local state is `work/task-state.md`. A shared
-WIP file is selected by `work/task-state.ref`, whose complete content is one portable
-relative path.
+The Skill provides a short execution rhythm: select a meaningful next result, act and
+observe, verify at the relevant boundary, update affected parts, and continue within
+the user's request. It uses descriptive step states without a workflow engine. It
+checkpoints at meaningful learning/progress changes and before interrupted work needs
+to be resumed; no tool-count quota determines semantic progress.
 
-The resolver rejects absolute paths, parent traversal, symlink escape, missing targets,
-non-files, malformed bindings, and two active sources. It canonicalizes paths only in
-memory to prove containment; absolute identities are not persisted or sent to the
-model.
+## Code and ownership
 
-The locality key is intentionally the task directory. Independent concurrent tasks
-must use separate directories or Git worktrees. A hidden per-session registry would add
-a second state authority and is deferred until a real same-directory collision proves
-it necessary.
+- `SKILL.md`, its template, and working-note examples define the agent workflow.
+- `task_state.py` creates, binds, locates, and reads records. It never writes a judgment
+  or marks a task complete. Existing records are not overwritten by initialization.
+- `task_state_runtime.py` owns root discovery, explicit selection, containment, and
+  rendering. Both the CLI and host adapters use it.
+- The Codex Plugin and cross-host lifecycle script adapt native event/output contracts.
+  They read existing state and return advisory context without creating task content.
+- The user installer handles reversible placement and configuration for supported hosts.
+  Installation backups are recovery copies, not task state.
 
-## Recovery lifecycle
+## Task identity and discovery
 
-Codex, Claude Code, and ZCode restore through
-`SessionStart(startup|resume|clear|compact)`. Kimi uses `UserPromptSubmit`; its
-`SessionStart` and `PostCompact` return values do not reach model context. Each user
-message rereads current state without a persistent deduplication cache, so compaction
-cannot strand a previously injected excerpt behind a stale delivery flag. This does
-not provide immediate recovery during autonomous compaction. Missing state is silent. Invalid
-state produces a bounded advisory diagnostic. Valid state prioritizes `Next action`
-and `Not done / do not redo` under a hard character ceiling.
+Named tasks live at `.tasks/<task-id>.md`. A stable ID allows several tasks in a repository
+without repeatedly overwriting one shared selector. A session change does not create a
+new task identity. Completed named notes move outside active discovery, normally into
+`.tasks/archive/`, and remain readable with an explicit relative file path.
 
-Hermes has no equally narrow post-compaction context-return event. Its Plugin and shell
-hook systems can inject at `pre_llm_call`, but that runs every turn. The package installs
-the standard Skill and retains manual recovery instead of silently adopting continuous
-injection. If Hermes later ships a dedicated, non-blocking post-compaction context
-event, it can receive the same adapter without changing state semantics.
+An explicit `--root` (or `TASK_STATE_ROOT`) pins the exact workspace. Otherwise discovery
+walks ancestors from the current directory, stopping at the first task marker
+(`work/task-state.md`, `work/task-state.ref`, or `.tasks`), Git boundary, or user home.
+A `.git` file is also a boundary. If no marker is found, the starting directory remains
+the root. The resolver never searches neighboring repositories or other worktrees.
 
-Every renderer states that recovery data is lower priority than current instructions,
-must be reconciled with the live workspace, and does not authorize automatic
-continuation or external effects. `TASK_STATE_DISABLED=1` makes lifecycle adapters
-silent for an unrelated one-shot invocation.
+Selection order at that root is:
 
-## Installation and rollback
+1. An explicit task ID or relative file. `read`/`resolve` also accept a task ID from
+   `TASK_STATE_TASK` when no CLI selector is supplied. An invalid selection has no fallback.
+2. A legacy direct state file or relative `.ref` binding, preserving existing installations.
+   Both legacy sources together are invalid.
+3. One `.tasks/*.md` file. Multiple files produce an ambiguity result listing candidates;
+   modification time does not decide which task owns the current request.
 
-Each non-Codex host receives an independent copy of the same Skill at its native user
-path. Kimi's TOML gets one marker-delimited managed block. ZCode and Claude Code receive
-one managed `SessionStart` hook group identified by its bundled script command. Reruns
-replace only those managed entries, so installation is idempotent and foreign hooks
-remain intact.
+The resolver rejects absolute bindings, traversal, missing/non-file targets, and symlink
+escapes. Resolved absolute paths are internal containment evidence; record identities
+and artifact references stay relative. An explicit root locator belongs in the handoff
+or invocation rather than being hardcoded into a portable task note.
 
-Before changing an existing Skill directory or configuration file, the installer copies
-it to a timestamped recovery directory. Writes are staged and atomically replaced.
-Uninstall removes only the four managed Skill paths and the package's own hook entries.
-The `doctor` command compares installed Skill trees with the reviewed source and checks
-the expected Hook registration. For Kimi it checks the actual event and command,
-not merely that two obsolete entries still exist. This is installation verification,
-not proof of live context delivery.
+`resolve` returns JSON metadata for inspection. `read` returns the complete selected
+UTF-8 file and is the manual recovery path. This keeps the existing metadata interface
+compatible while making recovery an actual content read.
 
-## Why this is narrower than planning-with-files
+## Recovery and context limits
 
-The design was reviewed against
-[`planning-with-files` v3.11.2](https://github.com/OthmanAdi/planning-with-files/releases/tag/v3.11.2).
-That project has accumulated valuable solutions for multi-platform adapters,
-three-file planning, per-turn injection, catchup from transcript stores, parallel plan
-selection, session attachment, attestation, ledgers, and optional continuation modes.
+Codex, Claude Code, and ZCode use `SessionStart(startup|resume|clear|compact)`. Kimi uses
+`UserPromptSubmit` to inject state before user-origin requests. Its `SessionStart` and
+`PostCompact` return values do not enter model context, so autonomous compaction does
+not trigger immediate injection. Hermes receives the portable Skill and
+uses manual reading. All bundled adapters delegate to the same resolver and renderer.
 
-This package keeps only the mechanisms needed for the accepted outcome:
+If the header and complete record fit within 8,000 characters, the original record is
+included without per-section shortening. Otherwise the output is prominently labeled
+as a partial preview and directs the agent to read the full file before deciding what
+to do. It prioritizes current understanding and legacy next-action/not-done sections,
+including only whole sections that fit. An oversized section is omitted in full. This
+is mechanical selection, not a claim that the omitted information is unimportant.
 
-- durable owner-readable state;
-- post-compaction and post-resume recovery where the host exposes a correct event;
-- bounded, labeled injection;
-- relative locality and containment;
-- explicit one-shot opt-out;
-- reversible Skill and Hook installation with a host-aware doctor.
+Missing state produces no context. Invalid or ambiguous state produces a bounded
+advisory diagnostic. Each recovery message labels task content as working data, requires
+reconciliation with the current workspace, and denies it independent authority for
+continuation or external effects. `TASK_STATE_DISABLED=1` suppresses adapter output.
 
-It omits injection before every model step, transcript scraping, attestation, phase counters, Stop
-gates, heartbeats, and auto-continuation. Those mechanisms add context cost or turn
-mechanical observations into semantic control. They should be introduced only for a
-named reproduced failure with a clear repair path.
+## Handoffs and concurrent work
+
+A receiver needs the task identity, accessible workspace and record, relevant artifacts
+and revision, and the next unresolved action. Relative paths help portability but cannot
+transfer files. Ignored or uncommitted state must be carried using an authorized handoff
+mechanism. A `.ref` and a new worktree alone cannot satisfy this requirement.
+
+Use one writer per task note. Workers return bounded findings and evidence for that
+writer to integrate after reading the latest version. Independent tasks use explicit
+selectors or host-launch environment pins. A shell tool cannot retroactively change its
+parent host's environment. There is no hidden global task registry or automatic note merge.
+
+## Installation and validation
+
+Each non-Codex host gets an independent copy of the Skill. Kimi configuration uses a
+marker-delimited managed TOML block; Claude Code and ZCode use managed SessionStart hook
+groups. The installer retains foreign entries, stages replacement writes, and backs up
+existing files. `doctor` compares the installed Skill tree and expected managed hooks.
+
+The test suite covers legacy compatibility, named tasks, root boundaries, full reads,
+bounded previews, subprocess hook contracts, and reversible installation in temporary
+homes. Fresh-context behavioral exercises can test whether a receiver uses a record
+correctly, but they do not substitute for a real installed-host compaction/resume run.
+
+The package has no Stop hook, heartbeat, semantic completion gate, transcript scraping,
+or automatic continuation. A state file supports task execution; successful recovery
+and a completed checklist do not themselves establish the user's outcome.

@@ -16,9 +16,9 @@ def _runtime():
     plugin_root = Path(os.environ.get("PLUGIN_ROOT", Path(__file__).resolve().parents[1]))
     scripts = plugin_root / "skills" / "task-state-with-files" / "scripts"
     sys.path.insert(0, str(scripts))
-    from task_state_runtime import render_recovery_context, resolve_state
+    from task_state_runtime import recovery_context_from_root
 
-    return render_recovery_context, resolve_state
+    return recovery_context_from_root
 
 
 def _emit(additional_context: str) -> None:
@@ -51,22 +51,10 @@ def main() -> int:
         return 0
 
     try:
-        render_recovery_context, resolve_state = _runtime()
-        resolution = resolve_state(Path(cwd))
-        if resolution.status == "missing":
-            return 0
-        if resolution.status == "invalid":
-            _emit(f"Recovery skipped: {resolution.message} Fix the local state files before relying on recovery.")
-            return 0
-        assert resolution.path is not None and resolution.relative_path is not None
-        state = resolution.path.read_text(encoding="utf-8")
-        _emit(
-            render_recovery_context(
-                relative_path=resolution.relative_path,
-                text=state,
-            )
-        )
-    except (OSError, UnicodeError, ImportError):
+        context = _runtime()(Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"), task=os.environ.get("TASK_STATE_TASK"))
+        if context:
+            _emit(context)
+    except (OSError, UnicodeError, ImportError, RuntimeError):
         _emit(
             "Recovery skipped: the local task-state file could not be loaded. "
             "Inspect the relative state file before relying on recovery."
