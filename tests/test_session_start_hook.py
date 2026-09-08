@@ -54,7 +54,7 @@ class SessionStartHookTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = self.run_hook(root)
+            result = self.run_hook(root, pins={"TASK_STATE_FILE": "work/task-state.md"})
 
         self.assertEqual(0, result.returncode, result.stderr)
         payload = json.loads(result.stdout)
@@ -82,10 +82,7 @@ class SessionStartHookTests(unittest.TestCase):
             nested.mkdir()
 
             ambiguous = self.run_hook(nested)
-            context = json.loads(ambiguous.stdout)["hookSpecificOutput"]["additionalContext"]
-            self.assertIn("Recovery skipped", context)
-            self.assertIn(".tasks/alpha.md", context)
-            self.assertNotIn("ALPHA-ONLY", context)
+            self.assertEqual("", ambiguous.stdout)
 
             selected = self.run_hook(nested, pins={"TASK_STATE_TASK": "beta"})
             context = json.loads(selected.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -117,7 +114,7 @@ class SessionStartHookTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
 
-    def test_invalid_binding_is_model_visible_but_non_blocking(self) -> None:
+    def test_unselected_invalid_binding_is_silent(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             ref = root / "work" / "task-state.ref"
@@ -127,10 +124,7 @@ class SessionStartHookTests(unittest.TestCase):
             result = self.run_hook(root, source="resume")
 
         self.assertEqual(0, result.returncode, result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertIn("additionalContext", payload["hookSpecificOutput"])
-        self.assertIn("Recovery skipped", payload["hookSpecificOutput"]["additionalContext"])
-        self.assertNotIn("decision", payload)
+        self.assertEqual("", result.stdout)
 
     def test_unmatched_source_is_silent(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,7 +140,7 @@ class SessionStartHookTests(unittest.TestCase):
             state.parent.mkdir()
             state.write_text("# Task State\n\n## Next action\nDo not inject me.\n")
 
-            result = self.run_hook(root, disabled=True)
+            result = self.run_hook(root, disabled=True, pins={"TASK_STATE_FILE": "work/task-state.md"})
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)

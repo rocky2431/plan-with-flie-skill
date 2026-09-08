@@ -48,10 +48,10 @@ walks ancestors from the current directory, stopping at the first task marker
 A `.git` file is also a boundary. If no marker is found, the starting directory remains
 the root. The resolver never searches neighboring repositories or other worktrees.
 
-Selection order at that root is:
+Deliberate CLI `read` / `resolve` selection order at that root is:
 
 1. An explicit task ID or relative file. `read`/`resolve` also accept a task ID from
-   `TASK_STATE_TASK` when no CLI selector is supplied. An invalid selection has no fallback.
+   `TASK_STATE_TASK` or `TASK_STATE_FILE` when no CLI selector is supplied. An invalid selection has no fallback.
 2. A legacy direct state file or relative `.ref` binding, preserving existing installations.
    Both legacy sources together are invalid.
 3. One `.tasks/*.md` file. Multiple files produce an ambiguity result listing candidates;
@@ -81,8 +81,12 @@ to do. It prioritizes current understanding and legacy next-action/not-done sect
 including only whole sections that fit. An oversized section is omitted in full. This
 is mechanical selection, not a claim that the omitted information is unimportant.
 
-Missing state produces no context. Invalid or ambiguous state produces a bounded
-advisory diagnostic. Each recovery message labels task content as working data, requires
+Hooks require a launch task/file selection or this native session's explicit
+`.tasks/.sessions/<session-hash>.ref` binding, created by `activate` and removed by
+`deactivate`. These local references are not task records and should not be committed.
+Launch selectors override a binding; task plus file is invalid. Hooks never use legacy
+or unique-record discovery without a selection. Unselected hooks are silent, even when
+old files are ambiguous. Invalid selected state produces a bounded advisory diagnostic. Each recovery message labels task content as working data, requires
 reconciliation with the current workspace, and denies it independent authority for
 continuation or external effects. `TASK_STATE_DISABLED=1` suppresses adapter output.
 

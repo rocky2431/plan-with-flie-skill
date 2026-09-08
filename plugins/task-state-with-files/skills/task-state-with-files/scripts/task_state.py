@@ -16,6 +16,7 @@ from task_state_runtime import (
     find_task_root,
     resolve_relative_target,
     resolve_state,
+    session_relative_path,
     task_relative_path,
 )
 
@@ -56,7 +57,10 @@ def _destination(root: Path, relative: str) -> Path:
 
 def _selection(args: argparse.Namespace) -> Resolution:
     state_file = getattr(args, "file", None)
-    task = args.task if args.task is not None else (None if state_file else os.environ.get("TASK_STATE_TASK"))
+    task = args.task
+    if task is None and state_file is None:
+        task = os.environ.get("TASK_STATE_TASK")
+        state_file = os.environ.get("TASK_STATE_FILE")
     try:
         root = _root(args)
     except (OSError, RuntimeError, ValueError):
@@ -141,6 +145,28 @@ def command_bind(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_activate(args: argparse.Namespace) -> int:
+    if args.task is None and args.file is None:
+        raise ValueError("Activation requires --task or --file; automatic discovery is only for read/resolve.")
+    selected = _selection(args)
+    if selected.status != "found":
+        raise ValueError(selected.message)
+    relative = session_relative_path(args.session)
+    binding = _destination(selected.root, relative)
+    expected = selected.relative_path + "\n"
+    _write_new(_destination(selected.root, ".tasks/.sessions/.gitignore"), "*\n")
+    if not _write_new(binding, expected) and binding.read_text(encoding="utf-8") != expected:
+        raise ValueError("This session selected another record. Deactivate it before switching.")
+    print(relative)
+    return 0
+
+
+def command_deactivate(args: argparse.Namespace) -> int:
+    binding = _destination(_root(args), session_relative_path(args.session))
+    binding.unlink(missing_ok=True)
+    return 0
+
+
 def command_resolve(args: argparse.Namespace) -> int:
     resolution = _selection(args)
     payload = {
@@ -172,7 +198,7 @@ def _add_root(parser: argparse.ArgumentParser) -> None:
 def _add_selection(parser: argparse.ArgumentParser) -> None:
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--task", help="Named task ID under .tasks (or TASK_STATE_TASK)")
-    selection.add_argument("--file", help="Exact task file relative to the task root")
+    selection.add_argument("--file", help="Exact task file relative to the task root (or TASK_STATE_FILE)")
     _add_root(parser)
 
 
@@ -198,6 +224,16 @@ def build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser("read", help="Read the complete selected task record without summarizing or truncating")
     _add_selection(read_parser)
     read_parser.set_defaults(handler=command_read)
+
+    activate_parser = subparsers.add_parser("activate", help="Select an existing record for one native session")
+    _add_selection(activate_parser)
+    activate_parser.add_argument("--session", required=True, help="Actual native session ID used in hook events")
+    activate_parser.set_defaults(handler=command_activate)
+
+    deactivate_parser = subparsers.add_parser("deactivate", help="Remove only this session's recovery selection")
+    _add_root(deactivate_parser)
+    deactivate_parser.add_argument("--session", required=True)
+    deactivate_parser.set_defaults(handler=command_deactivate)
     return parser
 
 

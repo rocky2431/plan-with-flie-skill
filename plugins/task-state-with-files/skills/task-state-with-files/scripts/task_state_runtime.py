@@ -7,6 +7,7 @@ used internally only to prove that a candidate remains inside that root.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 
@@ -15,6 +16,13 @@ SESSION_STATE = PurePosixPath("work/task-state.md")
 STATE_BINDING = PurePosixPath("work/task-state.ref")
 TASK_DIRECTORY = PurePosixPath(".tasks")
 MAX_CONTEXT_CHARS = 8_000
+
+
+def session_relative_path(session_id: str) -> str:
+    """Keep native session identities out of portable filesystem paths."""
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("Supply the actual non-empty native session ID.")
+    return f".tasks/.sessions/{hashlib.sha256(session_id.encode()).hexdigest()}.ref"
 
 
 @dataclass(frozen=True)
@@ -118,7 +126,7 @@ def resolve_relative_target(root: Path, value: str) -> Resolution:
 def _resolve_at_root(root: Path) -> Resolution:
     """Resolve legacy state or one unambiguous named record below ``root``.
 
-    ``work/task-state.md`` is session-local. ``work/task-state.ref`` may instead
+    ``work/task-state.md`` is workspace-local. ``work/task-state.ref`` may instead
     contain one portable relative path for repository-shared WIP state. Both at once
     are ambiguous and therefore invalid.
     """
@@ -240,9 +248,28 @@ def resolve_state(
 
 def recovery_context_from_root(
     cwd: Path, *, root_pin: str | None = None, task: str | None = None,
+    state_file: str | None = None, session_id: str | None = None,
 ) -> str | None:
-    """Shared adapter path: discover, select, read, and render without side effects."""
-    result = resolve_state(Path(root_pin) if root_pin is not None else cwd, task=task, discover=root_pin is None)
+    """Recover only a launch selection or this native session's explicit binding."""
+    if task is None and state_file is None and not (isinstance(session_id, str) and session_id.strip()):
+        return None
+    try:
+        root = Path(root_pin).resolve(strict=True) if root_pin is not None else find_task_root(cwd)
+        if not root.is_dir():
+            raise ValueError("The task root is not a directory.")
+    except (OSError, RuntimeError, ValueError):
+        if task is None and state_file is None:
+            return None
+        return "Recovery skipped: the explicitly selected task root is unavailable or is not a directory."
+    if task is None and state_file is None:
+        binding_path = session_relative_path(session_id)
+        if not _present(root / binding_path):
+            return None
+        binding = resolve_relative_target(root, binding_path)
+        if binding.status != "found":
+            return f"Recovery skipped: {binding.message}"
+        state_file = binding.path.read_text(encoding="utf-8").removesuffix("\n")
+    result = resolve_state(root, task=task, state_file=state_file, discover=False)
     if result.status == "missing":
         return None
     if result.status != "found":

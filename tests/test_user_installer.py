@@ -276,7 +276,8 @@ command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
             (workspace / "work").mkdir(parents=True)
             (workspace / "work/task-state.md").write_text("## Next action\nCUSTOM-ROOT-RECOVERY\n")
             if os.name == "posix":  # User hook commands are documented for POSIX hosts.
-                result = subprocess.run(hooks[1]["command"], shell=True, cwd=workspace, env=env,
+                result = subprocess.run(hooks[1]["command"], shell=True, cwd=workspace,
+                                        env={**env, "TASK_STATE_FILE": "work/task-state.md"},
                                         input=json.dumps({"hook_event_name": "UserPromptSubmit", "cwd": str(workspace)}),
                                         text=True, capture_output=True)
                 self.assertEqual(0, result.returncode, result.stderr)

@@ -50,9 +50,40 @@ python3 "<skill-dir>/scripts/task_state.py" read --file docs/wip/<existing-task>
 workspace. Legacy `init` without `--task` still creates `work/task-state.md`; `bind`
 still selects an existing relative WIP file through `work/task-state.ref`.
 
+Hooks recover only an explicitly selected task, not every file discovered by `read`.
+For recovery in this session, select the record using the actual native session ID
+reported by the host; do not invent one or confuse it with a delegation ID:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" activate \
+  --task <task-id> --session <native-session-id> --root <project-directory>
+```
+
+Use `--file <relative-path>` instead of `--task` for an existing business note.
+The selection lives at `.tasks/.sessions/<session-hash>.ref`, local to this workspace
+and session; keep that directory out of commits. `init`, `read` and the legacy `bind`
+do not activate hooks. A new native session must select the intended task again.
+If the host cannot expose its session ID, read explicitly or launch it with
+`TASK_STATE_TASK` or `TASK_STATE_FILE`, optionally `TASK_STATE_ROOT`. Changing a tool
+shell's environment cannot change the already-running host. Unselected hooks are silent.
+
 ## Maintain three connected parts
 
 Use the bundled template as a starting shape, adapting detail to the task.
+
+This Skill works independently. When handed a result or specification, read it and
+preserve its accepted outcome, acceptance IDs and meanings, exclusions, evidence
+conditions, corrections and existing authority. Reference the source instead of
+re-interviewing the owner or creating another specification. Use the requested path,
+then this task's existing note, then the repository's `docs/` or `documents/` convention;
+without an existing note, the normal `.tasks/<id>.md` remains sufficient. New business
+deliverables without a project convention belong under `documents/<work-id>/`.
+
+Choose one record and one writer for current execution understanding and next action.
+If an UltraGoal Carry-over already serves that purpose, read that file directly;
+if this task record owns it, UltraGoal can keep a pointer and necessary run summary.
+The goal contract still owns accepted terms. Workers return evidence for the record's
+writer to integrate; a dispatch receipt or completed checklist is not business acceptance.
 
 **Current understanding** explains the user's intent and observable outcome, material
 constraints, the current approach, known facts and assumptions, step progress, and the
@@ -138,6 +169,11 @@ Recovery supports continuation of the user's existing request. It does not grant
 authority or schedule another turn. For an unrelated one-shot host invocation,
 `TASK_STATE_DISABLED=1` disables hook recovery for that invocation only.
 
+Retain a delegated task's ID and terminal receipt with its actual output paths. After
+an observation timeout, keep observing the same ID. If execution is unknown, inspect
+native state and effects before retrying. Record business checks separately from a
+normally ended model turn; another Skill is optional for both delegation and checking.
+
 ## Finish without discarding useful learning
 
 Verify the user's outcome and reconcile the record with the actual artifacts. Record
@@ -150,3 +186,7 @@ never overwrite an earlier archive on a name collision. Do not create a second c
 report by default. Remove transient session state
 and bindings once no unfinished work depends on them. Do not automatically promote
 task-specific hypotheses or lessons into global instructions or long-term memory.
+
+Before archiving or switching this session's record, remove its selection with
+`task_state.py deactivate --session <native-session-id> --root <project-directory>`.
+Other sessions' selections remain intact; never change them to select this task.

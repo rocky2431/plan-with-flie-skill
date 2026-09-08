@@ -51,7 +51,11 @@ def main() -> int:
         return 0
 
     try:
-        context = _runtime()(Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"), task=os.environ.get("TASK_STATE_TASK"))
+        context = _runtime()(
+            Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"),
+            task=os.environ.get("TASK_STATE_TASK"), state_file=os.environ.get("TASK_STATE_FILE"),
+            session_id=event.get("session_id"),
+        )
         if context:
             _emit(context)
     except (OSError, UnicodeError, ImportError, RuntimeError):

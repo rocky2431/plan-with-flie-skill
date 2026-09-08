@@ -40,8 +40,12 @@ def _emit(host: str, context: str) -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
-def _load_context(cwd: str) -> str | None:
-    return recovery_context_from_root(Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"), task=os.environ.get("TASK_STATE_TASK"))
+def _load_context(cwd: str, session_id: str | None) -> str | None:
+    return recovery_context_from_root(
+        Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"),
+        task=os.environ.get("TASK_STATE_TASK"), state_file=os.environ.get("TASK_STATE_FILE"),
+        session_id=session_id,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,7 +71,7 @@ def main() -> int:
         return 0
 
     try:
-        context = _load_context(cwd)
+        context = _load_context(cwd, event.get("session_id"))
     except (OSError, UnicodeError, RuntimeError):
         context = (
             "Recovery skipped: the local task-state file could not be loaded. "

@@ -64,7 +64,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self.write_state(root, "KIMI-RECOVERY-MARKER")
-            result = self.run_hook("kimi", root, event="UserPromptSubmit")
+            result = self.run_hook("kimi", root, event="UserPromptSubmit", pins={"TASK_STATE_FILE": "work/task-state.md"})
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("KIMI-RECOVERY-MARKER", result.stdout)
@@ -78,7 +78,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
                                   ("SessionStart", "resume"),
                                   ("PostCompact", None), ("TurnStarted", None)):
                 with self.subTest(event=event, source=source):
-                    result = self.run_hook("kimi", root, event=event, source=source)
+                    result = self.run_hook("kimi", root, event=event, source=source, pins={"TASK_STATE_FILE": "work/task-state.md"})
                     self.assertEqual(0, result.returncode, result.stderr)
                     self.assertEqual("", result.stdout)
 
@@ -86,9 +86,9 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             self.write_state(root, "FIRST-STATE")
-            first = self.run_hook("kimi", root, event="UserPromptSubmit")
+            first = self.run_hook("kimi", root, event="UserPromptSubmit", pins={"TASK_STATE_FILE": "work/task-state.md"})
             self.write_state(root, "UPDATED-STATE")
-            second = self.run_hook("kimi", root, event="UserPromptSubmit")
+            second = self.run_hook("kimi", root, event="UserPromptSubmit", pins={"TASK_STATE_FILE": "work/task-state.md"})
             self.assertIn("FIRST-STATE", first.stdout)
             self.assertIn("UPDATED-STATE", second.stdout)
             self.assertNotIn("FIRST-STATE", second.stdout)
@@ -100,7 +100,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
                 root = Path(tmpdir)
                 self.write_state(root, f"{host.upper()}-RECOVERY-MARKER")
                 result = self.run_hook(
-                    host, root, event="SessionStart", source="compact"
+                    host, root, event="SessionStart", source="compact", pins={"TASK_STATE_FILE": "work/task-state.md"}
                 )
 
                 self.assertEqual(0, result.returncode, result.stderr)
@@ -137,6 +137,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
                     event=event,
                     source=source,
                     disabled=True,
+                    pins={"TASK_STATE_FILE": "work/task-state.md"},
                 )
 
             self.assertEqual("", missing.stdout)
@@ -147,7 +148,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as tmpdir:
                 root = Path(tmpdir)
                 self.write_state(root, "MUST-NOT-APPEAR")
-                result = self.run_hook(host, root, event="Stop")
+                result = self.run_hook(host, root, event="Stop", pins={"TASK_STATE_FILE": "work/task-state.md"})
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("", result.stdout)
@@ -165,7 +166,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
                 (root / ".tasks" / "unrelated.md").write_text("WRONG-TASK\n", encoding="utf-8")
                 (root / "src").mkdir()
                 ambiguous = self.run_hook(host, root / "src", event=event, source=source)
-                self.assertIn("Recovery skipped", ambiguous.stdout)
+                self.assertEqual("", ambiguous.stdout)
                 self.assertNotIn("CORRECT-TASK", ambiguous.stdout)
 
                 selected = self.run_hook(host, Path(elsewhere), event=event, source=source,

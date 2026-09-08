@@ -13,15 +13,28 @@ host-specific lifecycle event and returns advisory task context.
 
 ## Locating the record
 
-All adapters discover the nearest task root from the event's `cwd`, stopping at a task
-marker or Git boundary. `TASK_STATE_ROOT` pins an exact workspace, and `TASK_STATE_TASK`
-selects a named `.tasks/<id>.md` record. Set these in the host's launch environment;
+All adapters require a launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or
+an explicit binding for the native `session_id` in the hook event. With neither,
+they are silent even when a legacy file, one record or several records exist.
+`TASK_STATE_ROOT` pins an exact workspace; otherwise the selected recovery uses the
+nearest task root from the event’s `cwd`, stopping at a task marker or Git boundary. Set these in the host's launch environment;
 changing a child tool shell's environment does not change the already-running host.
 
-Without an explicit task, the legacy direct file/binding takes precedence; otherwise a
-single named record is selected. Several named records produce an ambiguity diagnostic.
-An invalid explicit selection never falls back to another task. Hooks do not infer task
-identity from titles, recent modification times, or task-note prose.
+Select an existing record for the actual native session before relying on recovery:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" activate --task <task-id> --session <native-session-id> --root <project-root>
+python3 "<skill-dir>/scripts/task_state.py" deactivate --session <native-session-id> --root <project-root>
+```
+
+`activate --file <relative-path>` selects an existing business note. Each workspace
+stores separate `.tasks/.sessions/<session-hash>.ref` files; do not commit them.
+A different record requires deactivation first, and a new session selects its own
+record. Launch selectors take precedence over a saved session binding; supplying both
+task and file is invalid. No selector ever falls back after an error. A root pin alone
+is not activation. If the host does not expose a native session ID, use launch selectors
+or explicit full reads. Legacy file/binding and unique-record discovery remain available
+only to deliberate CLI `read`/`resolve`, not unselected hooks.
 
 An agent can always select and read manually using the loaded Skill path:
 
@@ -41,8 +54,8 @@ records yield a labeled partial preview of complete sections. Read the whole sel
 record before making continuation decisions from a partial preview. Omitted sections
 may contain decisive corrections or unfinished checks.
 
-All adapters are advisory and fail open. Missing state is silent. Invalid/ambiguous
-state emits a bounded diagnostic. `TASK_STATE_DISABLED=1` silences every bundled adapter
+All adapters are advisory and fail open. Unselected recovery is silent. An invalid explicitly selected
+record or binding emits a bounded diagnostic. `TASK_STATE_DISABLED=1` silences every bundled adapter
 for an unrelated one-shot invocation. No adapter schedules continuation or blocks stopping.
 
 ## Verification boundary

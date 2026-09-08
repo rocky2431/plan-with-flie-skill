@@ -14,7 +14,7 @@ model, tools, and execution; this package only maintains and restores task state
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.3.0. The implementation uses the Python standard library.
+Version: 0.4.0. The implementation uses the Python standard library.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
@@ -135,10 +135,10 @@ task marker or Git boundary, stopping at the user's home. This lets work started
 subdirectory find the project record. `--root <project-directory>` or
 `TASK_STATE_ROOT` pins an exact workspace.
 
-Selection at the chosen root follows this order:
+For deliberate CLI `read` / `resolve`, selection at the chosen root follows this order:
 
-1. An explicit `--task` or `--file`. `TASK_STATE_TASK` supplies a task ID when no
-   CLI selector is present.
+1. An explicit `--task` or `--file`. With no CLI selector, use `TASK_STATE_TASK`
+   or `TASK_STATE_FILE` from the launch environment; both together are invalid.
 2. A legacy `work/task-state.md` file or `work/task-state.ref` binding.
 3. The only active `.tasks/*.md` record.
 
@@ -183,7 +183,25 @@ records produce a labeled partial preview made from whole sections, followed by 
 instruction to read the complete file. The preview is mechanical selection, not a
 semantic summary.
 
-Missing state stays silent. Ambiguous or invalid state returns a bounded diagnostic.
+Hooks need an explicit launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or
+this native session's saved selection. Existing files alone never activate recovery.
+To select the record for a running session, use its actual native session ID:
+
+```bash
+python3 "<skill-dir>/scripts/task_state.py" activate \
+  --task export-ready --session <native-session-id> --root <project-root>
+python3 "<skill-dir>/scripts/task_state.py" deactivate \
+  --session <native-session-id> --root <project-root>
+```
+
+Use `--file` for an existing business record. The per-session reference lives in
+`.tasks/.sessions/`; keep it out of commits. A new session selects its record again.
+When a host cannot expose that identity, use the launch environment or manual `read`.
+Changing a child shell's environment cannot change its already-running parent host.
+
+Unselected hooks stay silent, including with ambiguous or invalid old files. Invalid
+explicit selections return a bounded diagnostic without falling back. This replaces
+the pre-0.4 implicit single-file hook recovery; manual discovery remains compatible.
 Set `TASK_STATE_DISABLED=1` for an unrelated one-shot invocation that should not load
 task state.
 
@@ -191,6 +209,15 @@ A useful handoff names the task ID or relative record path, the actual workspace
 relevant revision and uncommitted artifacts, and the next action. The receiver must be
 able to access both the note and its evidence. A task ID, binding, or new Git worktree
 does not transfer ignored or uncommitted files.
+
+The Skill works without companion Skills. For a supplied result/specification,
+read and preserve its acceptance IDs and meanings, boundaries, key corrections and
+evidence before continuing. Reuse existing business documents; for new deliverables,
+follow the project's `docs/` or `documents/` convention, defaulting to
+`documents/<work-id>/` only when none exists. `.tasks/` records remain supported.
+If UltraGoal Carry-over already owns the current execution state, read it instead of
+creating another note; if a Task note owns it, Carry-over points there. Accepted goal
+terms remain in the goal contract.
 
 Use one writer for each task note. Other agents can return findings and evidence for
 that writer to integrate after reading the latest record.

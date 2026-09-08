@@ -1,6 +1,6 @@
 {
   "name": "task-state-with-files",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Preserve task intent, evidence-backed judgments, reflections, and step progress in portable working notes across compaction and agent handoffs.",
   "author": {
     "name": "rocky2431",
