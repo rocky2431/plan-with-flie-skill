@@ -69,6 +69,24 @@ def _hook_command(host: str) -> str:
     )
 
 
+def _check_native_plugin(home: Path, host: str) -> None:
+    paths = {
+        "claude": home / ".claude/plugins/installed_plugins.json",
+        "codex": home / ".codex/config.toml",
+        "kimi": _skill_destination(home, "kimi").parents[1] / "plugins/installed.json",
+        "zcode": home / ".zcode/cli/plugins/installed_plugins.json",
+    }
+    path = paths.get(host)
+    if path is None or not path.is_file():
+        return
+    data = (tomllib.loads(path.read_text()) if path.suffix == ".toml"
+            else _read_json_object(path)).get("plugins", {})
+    names = data if isinstance(data, dict) else [item.get("id", "") for item in data]
+    if any(name.split("@")[0] == "task-state-with-files" for name in names):
+        raise ValueError(f"{host} already owns task-state-with-files as a plugin; update it through "
+                           "that host's plugin manager, not a second user Skill installation.")
+
+
 def _parse_hosts(raw: str) -> list[str]:
     hosts: list[str] = []
     for item in raw.split(","):
@@ -472,6 +490,7 @@ def _install(home: Path, hosts: list[str], backup_dir: Path) -> None:
     if not (SKILL_SOURCE / "SKILL.md").is_file():
         raise ValueError(f"Bundled Skill is missing from {SKILL_SOURCE}.")
     for host in hosts:
+        _check_native_plugin(home, host)
         _preflight_config(home, host)
     for host in hosts:
         _backup_host(home, host, backup_dir)
@@ -500,7 +519,7 @@ def _add_common(parser: argparse.ArgumentParser, *, backup: bool) -> None:
     )
     parser.add_argument(
         "--hosts",
-        default=",".join(SUPPORTED_HOSTS),
+        default="hermes",
         help="Comma-separated hosts: kimi,zcode,claude,hermes",
     )
     if backup:

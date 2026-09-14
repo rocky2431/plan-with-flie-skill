@@ -21,6 +21,24 @@ HOOK_PATH = SKILL_ROOT / "scripts" / "lifecycle_hook.py"
 
 
 class CrossHostLifecycleHookTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX hook command; Windows command is packaged separately")
+    def test_native_plugin_hook_executes_its_own_bundled_script(self) -> None:
+        plugin = SKILL_ROOT.parents[1]
+        hook = json.loads((plugin / "hooks/hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"][0]
+        for host in ("claude", "zcode"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                self.write_state(root, "NATIVE-PACKAGE-RECOVERY")
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("TASK_STATE_") and not key.endswith("PLUGIN_ROOT")}
+                env.update({host.upper() + "_PLUGIN_ROOT": str(plugin), "TASK_STATE_FILE": "work/task-state.md"})
+                result = subprocess.run(["/bin/sh", "-c", hook["command"]], env=env,
+                    input=json.dumps({"session_id": "test-session", "cwd": str(root),
+                        "hook_event_name": "SessionStart", "source": "compact"}),
+                    text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("NATIVE-PACKAGE-RECOVERY", result.stdout)
+
     def run_hook(
         self,
         host: str,

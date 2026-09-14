@@ -16,6 +16,20 @@ HOSTS = ("kimi", "zcode", "claude", "hermes")
 
 
 class CrossHostUserInstallerTests(unittest.TestCase):
+    def test_native_plugin_prevents_a_duplicate_user_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            state = home / ".claude/plugins/installed_plugins.json"
+            state.parent.mkdir(parents=True)
+            state.write_text(json.dumps({"plugins": {"task-state-with-files@market": [{"scope": "user"}]}}))
+            before = state.read_bytes()
+            result = subprocess.run([sys.executable, str(INSTALLER), "install", "--home", str(home),
+                "--hosts", "claude"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("already owns", result.stderr)
+            self.assertEqual(state.read_bytes(), before)
+            self.assertFalse((home / ".claude/skills/task-state-with-files").exists())
+
     def run_installer(
         self,
         home: Path,

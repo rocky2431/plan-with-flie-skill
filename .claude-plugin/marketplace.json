@@ -1,0 +1,13 @@
+{
+  "name": "rocky-task-state",
+  "owner": {
+    "name": "rocky2431"
+  },
+  "plugins": [
+    {
+      "name": "task-state-with-files",
+      "source": "./plugins/task-state-with-files",
+      "description": "Preserve task intent, evidence-backed judgments, reflections, and step progress in portable working notes across compaction and agent handoffs."
+    }
+  ]
+}

@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "task-state-with-files"
 HOOK_PATH = PLUGIN_ROOT / "hooks" / "session_start.py"
-HOOKS_JSON = PLUGIN_ROOT / "hooks" / "hooks.json"
+HOOKS_JSON = PLUGIN_ROOT / "hooks" / "codex.json"
 
 
 class SessionStartHookTests(unittest.TestCase):

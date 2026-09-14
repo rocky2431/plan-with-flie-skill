@@ -1,5 +1,5 @@
 {
-  "description": "Restore owner-readable local task state after Codex session lifecycle events.",
+  "description": "Recover task state from this host-owned plugin package.",
   "hooks": {
     "SessionStart": [
       {
@@ -7,11 +7,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$PLUGIN_ROOT/hooks/session_start.py\"",
-            "commandWindows": "py -3 \"%PLUGIN_ROOT%\\hooks\\session_start.py\"",
-            "timeout": 10,
-            "additionalContextLimit": 8000,
-            "statusMessage": "Restoring local task state"
+            "command": "if [ -n \"${ZCODE_PLUGIN_ROOT:-}\" ]; then python3 \"$ZCODE_PLUGIN_ROOT/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host zcode; else python3 \"${CLAUDE_PLUGIN_ROOT:?}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host claude; fi",
+            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\skills\\task-state-with-files\\scripts\\lifecycle_hook.py\" --host claude",
+            "timeout": 10
           }
         ]
       }

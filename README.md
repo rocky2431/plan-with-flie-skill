@@ -14,7 +14,7 @@ model, tools, and execution; this package only maintains and restores task state
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.4.0. The implementation uses the Python standard library.
+Version: 0.4.1. The implementation uses the Python standard library.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
@@ -43,32 +43,32 @@ is available. Review and trust the hook when Codex asks.
 
 ### Claude Code, Kimi Code, zCode, and Hermes
 
-Clone the repository, review the package, and run the user installer:
+Claude Code and zCode install `task-state-with-files@rocky-task-state` from this
+repository's native marketplace. Kimi Code installs `plugins/task-state-with-files`
+through its plugin manager. Instructions, scripts, and recovery hooks ship together
+and update through that same manager. Codex selects `hooks/codex.json`; Claude Code
+and zCode discover `hooks/hooks.json`; Kimi uses the hook in `kimi.plugin.json`.
+
+For Hermes, use the portable installer:
 
 ```bash
-git clone https://github.com/rocky2431/plan-with-flie-skill.git
-cd plan-with-flie-skill
-python3 scripts/install_user.py install --hosts kimi,zcode,claude,hermes
-python3 scripts/install_user.py doctor --hosts kimi,zcode,claude,hermes
+python3 scripts/install_user.py install --hosts hermes
+python3 scripts/install_user.py doctor --hosts hermes
 ```
 
-The installer copies the Skill into each host's user directory and adds only the
-managed hook entries. It backs up existing Skill and configuration files under
-`~/.local/state/task-state-with-files/backups/<timestamp>-install/` before changing
-them. Restart the host after installation.
+The installer backs up existing files before replacement. It refuses a second user
+Skill when the selected host already owns this plugin. Portable-only installations
+on older hosts remain available through explicit `--hosts` selection.
 
-Kimi Code can instead load `plugins/task-state-with-files` as a native plugin. Use
-either the native plugin or the user installation so the recovery hook runs once.
-Kimi installations honor `KIMI_CODE_HOME`, which defaults to `~/.kimi-code`.
-
-To remove the user installation and its managed hooks:
+To migrate an old user installation, remove its Skill and managed hooks with the
+uninstaller, then install through the host's plugin manager:
 
 ```bash
-python3 scripts/install_user.py uninstall --hosts kimi,zcode,claude,hermes
+python3 scripts/install_user.py uninstall --hosts kimi,zcode,claude
 ```
 
-Uninstall also makes recovery copies. Hermes receives the Skill but no lifecycle
-hook, so it reads task state on demand.
+Uninstall creates recovery copies and preserves unrelated hook entries. Start a new
+session after migration. Hermes has no lifecycle hook and reads task state on demand.
 
 ## Your first task
 
@@ -172,8 +172,8 @@ no unfinished work depends on them.
 | Host | Installation | Recovery event | Context output |
 |---|---|---|---|
 | Codex | Marketplace plugin | `SessionStart(startup\|resume\|clear\|compact)` | `additionalContext` |
-| Claude Code | User Skill and hook | `SessionStart(startup\|resume\|clear\|compact)` | `additionalContext` |
-| zCode | User Skill and hook | `SessionStart(startup\|resume\|clear\|compact)` | `additionalContext` |
+| Claude Code | Native plugin | `SessionStart(startup\|resume\|clear\|compact)` | `additionalContext` |
+| zCode | Native plugin | `SessionStart(startup\|resume\|clear\|compact)` | `additionalContext` |
 | Kimi Code | Native plugin or user Skill and hook | `UserPromptSubmit` | Plain stdout in model context and UI |
 | Hermes | User Skill | Manual `read` | Complete file content |
 

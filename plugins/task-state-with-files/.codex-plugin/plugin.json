@@ -1,6 +1,6 @@
 {
   "name": "task-state-with-files",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Preserve task intent, evidence-backed judgments, reflections, and step progress in portable working notes across compaction and agent handoffs.",
   "author": {
     "name": "rocky2431",
@@ -14,7 +14,11 @@
     "longDescription": "Adds a working-note Skill and advisory recovery hooks. Keep user intent, judgments and corrections, evidence, and unfinished steps together; select named tasks and read full records after context loss or handoff.",
     "developerName": "rocky2431",
     "category": "Productivity",
-    "capabilities": ["Skills", "Hooks"],
+    "capabilities": [
+      "Skills",
+      "Hooks"
+    ],
     "defaultPrompt": "Use $task-state-with-files to preserve this task's intent, current understanding, judgments, evidence, and next step across compaction and handoffs."
-  }
+  },
+  "hooks": "./hooks/codex.json"
 }
