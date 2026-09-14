@@ -253,6 +253,21 @@ Run the compact recovery smoke.
         self.assertNotIn("END-LONG-SECTION", rendered)
         self.assertLessEqual(len(rendered), self.runtime.MAX_CONTEXT_CHARS)
 
+    def test_borrowed_document_state_precedes_large_background(self) -> None:
+        for heading in ("Current position", "Carry-over"):
+            with self.subTest(heading=heading):
+                state = f"## {heading}\n" + "Important context. " * 80
+                state += "\n### Next\nRESUME_SELECTED_MILESTONE\n"
+                body = "# Existing document\n\n## Background\n" + "Context details. " * 400
+                body += "\n\n" + state + "\n## Evidence\n" + "Archived observation. " * 500
+                rendered = self.runtime.render_recovery_context(
+                    relative_path="documents/existing.md", text=body,
+                )
+                self.assertIn(state.strip(), rendered)
+                self.assertIn("PARTIAL RECOVERY PREVIEW", rendered)
+                self.assertIn("Read the complete record", rendered)
+                self.assertLessEqual(len(rendered), self.runtime.MAX_CONTEXT_CHARS)
+
     def test_extreme_identity_keeps_the_recovery_output_bounded(self) -> None:
         rendered = self.runtime.render_recovery_context(relative_path="a/" * 5000 + "task.md", text="state")
         self.assertIn("Recovery skipped", rendered)

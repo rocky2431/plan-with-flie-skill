@@ -62,6 +62,40 @@ Next: Test both query types on the same held-out documents and inspect the actua
 A new agent should run the outstanding comparison rather than restart a broad tool
 survey. Keep the source documents and evaluation queries reachable through E3.
 
+## Maintain an existing document
+
+If `documents/search/THOUGHTS.md` already owns an inquiry, read it with `read --file`
+and update its `## Current position`: the supported judgment, unsettled comparison,
+next observation and result location. Keep research evidence below it. Do not create
+`.tasks/search.md` or replace its structure with the standalone template. A bounded
+result can stay in its existing result section; a separately delivered report keeps
+its own file. No companion Skill is required to maintain either form.
+
+If `.goals/export.goal.md` owns execution state, edit only `## Carry-over`, for example:
+
+```markdown
+## Carry-over
+Read this before acting; update it from current evidence before finishing.
+### State
+- A1 remains unverified: the fixture export has 50 of 137 items (evidence/page-1.json).
+### Lessons
+- A successful request does not establish coverage; reconcile the server total.
+### Next
+- Follow next_cursor, then compare the exported IDs and total against the fixture.
+```
+
+Leave Intent, Boundary, Anchor, Stop condition, Verification, Acceptance requirement
+text and labelled Means declarations intact. Use the goal's existing confirmation
+process for requested changes; state maintenance grants no authority to change them.
+Finish and retain the goal under its own lifecycle, never archive it as a Task note.
+
+If `.tasks/export.md` already owns a longer milestone, keep it in place when a goal
+starts. The goal carries its accepted scope and a locator to that record; update the
+record's current facts, judgments and next action there. A reference must resolve to
+actual content, not another reference back to the goal. A dated recovery summary is
+derived evidence, not a second plan. Select one recovery provider independently of
+where the state lives; manual reading does not activate a hook.
+
 ## Avoid semantic loss during updates
 
 | Weak record | Useful replacement |

@@ -2,6 +2,11 @@
 
 Record: `{{STATE_PATH}}` (paths below are relative to the task root).
 
+<!-- Standalone fallback only: reuse a selected document or suitable section first.
+     In a borrowed record, preserve its structure and edit only mutable state.
+     Link adopted direction, plan/milestone and accepted terms with source date or
+     revision where applicable; omit absent layers and do not copy specifications. -->
+
 ## Current understanding
 
 ### Intent and outcome

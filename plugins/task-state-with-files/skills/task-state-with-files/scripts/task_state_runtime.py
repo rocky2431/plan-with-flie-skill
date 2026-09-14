@@ -349,7 +349,7 @@ def render_recovery_context(*, relative_path: str, text: str) -> str:
 
     def is_critical(name: str) -> bool:
         lowered = name.casefold()
-        return lowered.startswith(("current understanding", "next action", "not done"))
+        return lowered.startswith(("current understanding", "current position", "carry-over", "next action", "not done"))
 
     ordered = [block for block in blocks if is_critical(block[0])]
     ordered.extend(block for block in blocks if not is_critical(block[0]))

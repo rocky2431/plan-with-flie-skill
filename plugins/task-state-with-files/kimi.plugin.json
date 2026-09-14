@@ -1,6 +1,6 @@
 {
   "name": "task-state-with-files",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Recover bounded task state before user prompts. Kimi SessionStart and PostCompact output is not injected into model context.",
   "skills": [
     "./skills"

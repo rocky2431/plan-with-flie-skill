@@ -14,7 +14,7 @@ model, tools, and execution; this package only maintains and restores task state
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.4.1. The implementation uses the Python standard library.
+Version: 0.5.0. The implementation uses the Python standard library.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
@@ -162,8 +162,10 @@ python3 "<skill-dir>/scripts/task_state.py" bind docs/wip/export-ready.md
 Bindings must stay inside the selected project. The resolver rejects absolute paths,
 parent traversal, missing targets, and symlink escapes.
 
-Move completed named records to `.tasks/archive/<task-id>.md` or follow the project's
-own archive convention. Archived records stay readable through `read --file` but are
+Move completed Skill-created `.tasks/<task-id>.md` records to `.tasks/archive/<task-id>.md`
+or follow the project's own archive convention. Borrowed inquiry and goal documents
+retain their own structure and lifecycle; finish their state section without moving
+the entire document into the task archive. Archived records stay readable through `read --file` but are
 not selected automatically. Remove disposable session files and bindings only after
 no unfinished work depends on them.
 
@@ -218,6 +220,12 @@ follow the project's `docs/` or `documents/` convention, defaulting to
 If UltraGoal Carry-over already owns the current execution state, read it instead of
 creating another note; if a Task note owns it, Carry-over points there. Accepted goal
 terms remain in the goal contract.
+
+Keep the explicitly selected record, then reuse a fitting existing document or section,
+then use the standalone default. Arming a goal does not transfer state ownership.
+Maintain an inquiry's Current position or a goal's Carry-over without adding a parallel
+ledger. Choose one recovery provider for the same task through existing session bindings;
+state location does not choose it. See the shipped [embedded examples](plugins/task-state-with-files/skills/task-state-with-files/references/working-notes.md#maintain-an-existing-document).
 
 Use one writer for each task note. Other agents can return findings and evidence for
 that writer to integrate after reading the latest record.

@@ -29,7 +29,9 @@ single `.tasks/*.md` record is selected. Multiple named records require an expli
 selection. `resolve` reports JSON metadata only; it does not restore understanding.
 An explicit `--task` or `--file` never falls back to a different task.
 
-For new substantive work, choose a stable, descriptive task ID and initialize once:
+Keep the explicitly selected record, then reuse a suitable existing document or
+section matching this task's identity and scope, not recency or installed Skills.
+Only when neither exists, choose a stable task ID and initialize once:
 
 ```bash
 python3 "<skill-dir>/scripts/task_state.py" init \
@@ -69,7 +71,8 @@ shell's environment cannot change the already-running host. Unselected hooks are
 
 ## Maintain three connected parts
 
-Use the bundled template as a starting shape, adapting detail to the task.
+Use the bundled template for a new standalone record. In a borrowed document,
+preserve its headings and edit only its mutable state; do not insert the full template.
 
 This Skill works independently. When handed a result or specification, read it and
 preserve its accepted outcome, acceptance IDs and meanings, exclusions, evidence
@@ -84,6 +87,19 @@ If an UltraGoal Carry-over already serves that purpose, read that file directly;
 if this task record owns it, UltraGoal can keep a pointer and necessary run summary.
 The goal contract still owns accepted terms. Workers return evidence for the record's
 writer to integrate; a dispatch receipt or completed checklist is not business acceptance.
+
+Keep owner intent above the adopted approach, and the approach above current progress.
+Where relevant, reference the upstream direction, adopted plan/milestone and current
+accepted terms by accessible path/section and date or revision. Do not duplicate their
+full text or invent absent layers for a small task. Milestones and goals name bounded
+outcomes; completing steps proves only their own results. Evidence may change judgments
+and authorized means, while changing purpose, scope or success requires explicit owner
+steering. Revisit affected work and retain evidence whose conditions still hold.
+
+For an inquiry draft, maintain Current position and relevant evidence; for a goal,
+maintain Carry-over's State, Lessons and Next without rewriting frozen clauses or
+copying Acceptance. Arming a goal does not transfer an existing record's ownership.
+See [embedded examples](references/working-notes.md#maintain-an-existing-document).
 
 **Current understanding** explains the user's intent and observable outcome, material
 constraints, the current approach, known facts and assumptions, step progress, and the
@@ -136,6 +152,14 @@ tool-count quota and no requirement to narrate every action or fill every field 
 
 ## Recover and hand off
 
+Choose the state record and recovery provider separately. For one task, select one
+provider using existing session bindings. If UltraGoal already recovers its contract
+and the selected record's path, use Task State's manual `read` and maintenance without
+also activating its hook. When switching from Task State recovery, deactivate only this
+session's selection; preserve other sessions. Launch environment selectors must be
+changed in the host launch environment, not a child shell. No shared registry or
+automatic cross-Skill discovery is needed.
+
 Codex, Claude Code, and zCode restore existing written state through `SessionStart`;
 Kimi Code uses `UserPromptSubmit` on the next user message. Kimi does not inject
 `SessionStart` or `PostCompact` output, so read the state file when an autonomous
@@ -144,6 +168,8 @@ records arrive intact. A large record yields a labeled partial preview of whole 
 and an explicit full-read instruction. Read the selected file before acting on a partial
 preview. Skill-only hosts use `read` manually. Read
 [host-recovery.md](references/host-recovery.md) for installation or adapter diagnosis.
+A borrowed goal's preview does not guarantee that all frozen terms fit; read the
+complete goal before acting even when its current-state section is visible.
 
 After reading, orient yourself: the user's intended outcome; established understanding
 and its evidence; completed and unfinished work; the next unresolved question. Compare
@@ -179,8 +205,10 @@ normally ended model turn; another Skill is optional for both delegation and che
 Verify the user's outcome and reconcile the record with the actual artifacts. Record
 what was delivered, the evidence, remaining limitations, and any reusable lesson with
 its scope. Follow the project's convention for retaining or archiving named task notes;
-otherwise move a completed named record to `.tasks/archive/<task-id>.md`, outside active
-discovery. Archived records remain readable with `--file`. Update any retained links or
+otherwise move a completed Skill-created `.tasks/<task-id>.md` to `.tasks/archive/<task-id>.md`, outside active
+discovery. Borrowed goal, inquiry and business documents follow their own lifecycle:
+finish the selected state section without moving the entire document into `.tasks/archive/`.
+Archived records remain readable with `--file`. Update any retained links or
 binding when moving a record. Reopen an archived record when continuing that same task;
 never overwrite an earlier archive on a name collision. Do not create a second completion
 report by default. Remove transient session state
