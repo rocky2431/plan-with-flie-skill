@@ -78,6 +78,35 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_grok_uses_native_identity_and_delivers_once_after_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_state(root, "GROK-RECOVERY")
+            sys.path.insert(0, str(SKILL_ROOT / "scripts"))
+            from task_state_runtime import session_relative_path
+            binding = root / session_relative_path("grok-owner")
+            binding.parent.mkdir(parents=True)
+            binding.write_text("work/task-state.md\n")
+            env = {k: v for k, v in os.environ.items() if not k.startswith("TASK_STATE_")}
+            env["GROK_PLUGIN_DATA"] = str(root / "plugin-data")
+            def run(name, session="grok-owner"):
+                return subprocess.run([sys.executable, str(HOOK_PATH), "--host", "grok"],
+                    input=json.dumps({"hook_event_name": name, "sessionId": session,
+                        "cwd": str(root)}), text=True, capture_output=True, env=env)
+            self.assertEqual(run("SessionStart").stdout, "")
+            self.assertEqual(run("PostToolUse", "foreign").stdout, "")
+            first = run("PostToolUse")
+            self.assertEqual(first.returncode, 0, first.stderr)
+            output = json.loads(first.stdout)["hookSpecificOutput"]
+            self.assertEqual(output["hookEventName"], "PostToolUse")
+            self.assertIn("GROK-RECOVERY", output["additionalContext"])
+            self.assertEqual(run("PostToolUse").stdout, "")
+            self.write_state(root, "GROK-UPDATED")
+            self.assertEqual(run("PostCompact").stdout, "")
+            self.assertIn("GROK-UPDATED", run("PostToolUse").stdout)
+            self.assertEqual(run("SessionEnd").stdout, "")
+            self.assertFalse(any((root / "plugin-data").rglob("*.sent")))
+
     def test_kimi_user_prompt_emits_plain_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

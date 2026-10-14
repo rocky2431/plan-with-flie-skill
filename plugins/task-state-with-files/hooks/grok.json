@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${GROK_PLUGIN_ROOT}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host grok",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${GROK_PLUGIN_ROOT}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host grok",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${GROK_PLUGIN_ROOT}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host grok",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${GROK_PLUGIN_ROOT}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host grok",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ host-specific lifecycle event and returns advisory task context.
 | ZCode | `~/.zcode/skills/task-state-with-files` | `SessionStart(startup|resume|clear|compact)` | `additionalContext` |
 | Kimi Code | `$KIMI_CODE_HOME/skills/task-state-with-files` (default `~/.kimi-code`) | `UserPromptSubmit` | plain stdout in model context and UI |
 | Hermes | `~/.hermes/skills/task-state-with-files` | Skill-only | manual `read` |
+| Grok Build | Native installed Plugin Skill | First `PostToolUse` after startup, resume or compaction | `hookSpecificOutput.additionalContext` |
 
 ## Locating the record
 
@@ -90,3 +91,22 @@ Primary references, checked on 2026-09-06:
 [Kimi hooks](https://www.kimi.com/code/docs/kimi-code-cli/customization/hooks.html),
 [Skill discovery](https://www.kimi.com/code/docs/kimi-code-cli/customization/skills.html),
 [environment variables](https://www.kimi.com/code/docs/kimi-code-cli/configuration/env-vars.html).
+
+## Grok Build
+
+Add Excellent Skill Marketplace, then install with
+`grok plugin install task-state-with-files --trust`. The native manifest selects
+Grok's camelCase `sessionId`; it never guesses from an inherited host identity.
+Use `GROK_SESSION_ID` from the current Grok terminal-tool environment when activating
+a selected record. Files alone remain inactive.
+
+Grok discards SessionStart and PostCompact stdout. Those events reset a per-session
+delivery marker in `GROK_PLUGIN_DATA`; the next PostToolUse injects the selected
+record once. SessionEnd clears that marker. There is no model call, polling,
+background service or project-note rewrite. A turn without tools cannot receive
+PostToolUse context; invoke the Skill's read command when needed.
+
+On 2026-10-14, Grok 1.0.52 in the real user configuration recovered a bound marker
+after native session/load and a changed marker after native compact_conversation.
+The model reported each new marker from injected context without reading the note.
+Primary contract: [Grok hooks](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md).

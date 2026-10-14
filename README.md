@@ -14,7 +14,12 @@ model, tools, and execution; this package only maintains and restores task state
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.5.0. The implementation uses the Python standard library.
+Version: 0.6.0. The implementation uses the Python standard library.
+
+Grok Build has a native plugin adapter: its first tool result after startup, resume
+or compaction carries the explicitly selected record. See
+[Grok recovery](plugins/task-state-with-files/skills/task-state-with-files/references/host-recovery.md#grok-build)
+for installation and the observed native lifecycle checks.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
