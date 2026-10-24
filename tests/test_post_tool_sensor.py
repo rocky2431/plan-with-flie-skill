@@ -27,7 +27,7 @@ class PostToolSensorTests(unittest.TestCase):
                    'sessionId' if host == 'grok' else 'session_id': session}
         if native:
             env[host.upper() + '_PLUGIN_ROOT'] = str(PLUGIN)
-            group = json.loads((PLUGIN / 'hooks/hooks.json').read_text())['hooks'][event][0]
+            group = json.loads((PLUGIN / 'hooks/hooks.json').read_text(encoding='utf-8'))['hooks'][event][0]
             command = ['/bin/sh', '-c', group['hooks'][0]['command']]
         elif host == 'codex':
             name = 'session_start.py' if event == 'SessionStart' else 'post_tool_use.py'
@@ -63,7 +63,7 @@ class PostToolSensorTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(record())
+                path.write_text(record(), encoding='utf-8')
                 if host == 'grok':
                     # First PostToolUse retains the existing one-time recovery contract.
                     first = self.run_hook(host, root)
@@ -71,13 +71,13 @@ class PostToolSensorTests(unittest.TestCase):
                     self.assertEqual(1, len(list((root / 'grok-data/recovery').glob('*.sent'))))
                 self.assertEqual('', self.run_hook(host, root))
                 snapshot = root / RUNTIME.snapshot_relative_path('tasks/fix.md')
-                self.assertEqual(record(), snapshot.read_text())
-                path.write_text(OPEN + '\nbroken\n')
+                self.assertEqual(record(), snapshot.read_text(encoding='utf-8'))
+                path.write_text(OPEN + '\nbroken\n', encoding='utf-8')
                 self.assert_report(host, self.run_hook(host, root))
                 self.assertEqual('', self.run_hook(host, root))
-                path.write_text(OPEN + '\nanother broken state\n')
+                path.write_text(OPEN + '\nanother broken state\n', encoding='utf-8')
                 self.assertEqual('', self.run_hook(host, root))
-                self.assertEqual(record(), snapshot.read_text())
+                self.assertEqual(record(), snapshot.read_text(encoding='utf-8'))
 
     def test_each_host_is_silent_unselected_disabled_and_unreadable(self):
         for host in ('claude', 'zcode', 'codex', 'grok', 'kimi'):
@@ -85,13 +85,13 @@ class PostToolSensorTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(OPEN)
+                path.write_text(OPEN, encoding='utf-8')
                 self.assertEqual('', self.run_hook(host, root, selected=False))
                 self.assertEqual('', self.run_hook(host, root, disabled=True))
                 self.assertFalse((root / '.task-state').exists())
                 # Grok needs its existing recovery marker before the sensor path.
                 if host == 'grok':
-                    path.write_text(record())
+                    path.write_text(record(), encoding='utf-8')
                     self.run_hook(host, root)
                 path.write_bytes(b'\xff')
                 self.assertEqual('', self.run_hook(host, root))
@@ -102,14 +102,14 @@ class PostToolSensorTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(record())
+                path.write_text(record(), encoding='utf-8')
                 binding = root / RUNTIME.session_relative_path('owner')
                 binding.parent.mkdir(parents=True)
-                binding.write_text('tasks/fix.md\n')
+                binding.write_text('tasks/fix.md\n', encoding='utf-8')
                 if host == 'grok':
                     self.run_hook(host, root, selected=False)
                 self.assertEqual('', self.run_hook(host, root, selected=False))
-                path.write_text(OPEN)
+                path.write_text(OPEN, encoding='utf-8')
                 self.assertEqual('', self.run_hook(host, root, selected=False, session='other'))
                 self.assert_report(host, self.run_hook(host, root, selected=False))
 
@@ -120,14 +120,14 @@ class PostToolSensorTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(record())
+                path.write_text(record(), encoding='utf-8')
                 self.assertEqual('', self.run_hook(host, root, native=True))
-                path.write_text(OPEN)
+                path.write_text(OPEN, encoding='utf-8')
                 self.assert_report(host, self.run_hook(host, root, native=True))
 
     def test_manifests_register_all_tool_sensor_with_correct_entrypoints(self):
         for relative in ('hooks/hooks.json', 'hooks/codex.json', 'hooks/grok.json'):
-            data = json.loads((PLUGIN / relative).read_text())
+            data = json.loads((PLUGIN / relative).read_text(encoding='utf-8'))
             groups = data['hooks']['PostToolUse']
             self.assertEqual(1, len(groups))
             self.assertNotIn('matcher', groups[0])
@@ -139,7 +139,7 @@ class PostToolSensorTests(unittest.TestCase):
                 self.assertIn('post_tool_use.py', hook['commandWindows'])
             else:
                 self.assertIn('scripts/lifecycle_hook.py', hook['command'])
-        data = json.loads((PLUGIN / 'kimi.plugin.json').read_text())
+        data = json.loads((PLUGIN / 'kimi.plugin.json').read_text(encoding='utf-8'))
         hooks = [h for h in data['hooks'] if h['event'] == 'PostToolUse']
         self.assertEqual([], hooks)
         self.assertEqual(['UserPromptSubmit'], [h['event'] for h in data['hooks']])
@@ -151,12 +151,12 @@ class PostToolSensorTests(unittest.TestCase):
             root = Path(tmp)
             path = root / 'tasks/fix.md'
             path.parent.mkdir()
-            path.write_text(record())
+            path.write_text(record(), encoding='utf-8')
             binding = root / RUNTIME.session_relative_path('owner')
             binding.parent.mkdir(parents=True)
-            binding.write_text('tasks/fix.md\n')
+            binding.write_text('tasks/fix.md\n', encoding='utf-8')
             self.assertIn('Task-state recovery', self.run_hook('kimi', root, 'UserPromptSubmit', selected=False))
-            path.write_text(OPEN)
+            path.write_text(OPEN, encoding='utf-8')
             self.assertEqual('', self.run_hook('kimi', root))
             self.assertEqual('', self.run_hook('kimi', root, 'UserPromptSubmit', selected=False, session='other'))
             report = self.run_hook('kimi', root, 'UserPromptSubmit', selected=False)

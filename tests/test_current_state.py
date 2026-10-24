@@ -151,7 +151,7 @@ class SnapshotSensorTests(unittest.TestCase):
     def test_pass_saves_snapshot_failure_keeps_copy_and_repair_clears_signal(self):
         self.assertIsNone(self.sense())
         self.assertEqual(self.good, self.snapshot.read_text(encoding='utf-8'))
-        self.assertEqual('*\n', (self.root / '.task-state/.gitignore').read_text())
+        self.assertEqual('*\n', (self.root / '.task-state/.gitignore').read_text(encoding='utf-8'))
         self.assertTrue((self.root / '.task-state/sessions').is_dir())
         self.assertEqual(hashlib.sha256(b'tasks/fix.md').hexdigest() + '.md', self.snapshot.name)
         self.path.write_text(OPEN + '\nbroken', encoding='utf-8')
@@ -178,7 +178,7 @@ class SnapshotSensorTests(unittest.TestCase):
         self.assertFalse(self.snapshot.exists())
         # `.abs` records the kind of the reported persisting problem (not its
         # message) so a changing character count is not a new problem.
-        self.assertEqual('malformed', self.signaled.read_text())
+        self.assertEqual('malformed', self.signaled.read_text(encoding='utf-8'))
         self.assertIsNone(self.sense())
 
     def test_append_only_depends_on_record_location(self):
@@ -192,7 +192,7 @@ class SnapshotSensorTests(unittest.TestCase):
                 report = self.sense(state_file=relative)
                 self.assertEqual(should_report, report is not None)
                 snapshot = self.root / RUNTIME.snapshot_relative_path(relative)
-                self.assertEqual(record() if should_report else path.read_text(), snapshot.read_text())
+                self.assertEqual(record() if should_report else path.read_text(encoding='utf-8'), snapshot.read_text(encoding='utf-8'))
 
     def test_unselected_disabled_invalid_and_unreadable_are_silent(self):
         self.assertIsNone(RUNTIME.sense_selected_record(self.root))
@@ -242,26 +242,26 @@ class CurrentStateCliTests(unittest.TestCase):
             result = self.run_cli(root, 'init', '--task', '2026-10-24-fix', '--objective', 'Restore continuity')
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual('tasks/2026-10-24-fix.md\n', result.stdout)
-            readme = (root / 'tasks/README.md').read_text()
+            readme = (root / 'tasks/README.md').read_text(encoding='utf-8')
             self.assertIn(RUNTIME.MANAGED_TASKS_LINE, readme.splitlines())
             self.assertIn('runtime state lives in `.task-state/`', readme)
             path = root / result.stdout.strip()
-            self.assertTrue(path.read_text().startswith('# 2026-10-24-fix\n'))
-            self.assertEqual('ok', RUNTIME.parse_current_state(path.read_text()).status)
-            path.write_text('Keep existing evidence.\n')
+            self.assertTrue(path.read_text(encoding='utf-8').startswith('# 2026-10-24-fix\n'))
+            self.assertEqual('ok', RUNTIME.parse_current_state(path.read_text(encoding='utf-8')).status)
+            path.write_text('Keep existing evidence.\n', encoding='utf-8')
             again = self.run_cli(root, 'init', '--task', '2026-10-24-fix', '--objective', 'Do not overwrite')
             self.assertEqual(0, again.returncode, again.stderr)
-            self.assertEqual('Keep existing evidence.\n', path.read_text())
+            self.assertEqual('Keep existing evidence.\n', path.read_text(encoding='utf-8'))
             other = self.run_cli(root, 'init', '--task', 'other', '--objective', 'Another task')
             self.assertEqual(0, other.returncode, other.stderr)
-            self.assertEqual(readme, (root / 'tasks/README.md').read_text())
+            self.assertEqual(readme, (root / 'tasks/README.md').read_text(encoding='utf-8'))
 
     def test_foreign_tasks_refused_but_explicit_file_is_allowed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'tasks').mkdir()
             for readme in ('', 'README containing ' + RUNTIME.MANAGED_TASKS_LINE + ' inline\n'):
-                (root / 'tasks/README.md').write_text(readme)
+                (root / 'tasks/README.md').write_text(readme, encoding='utf-8')
                 before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
                 result = self.run_cli(root, 'init', '--task', 'fix', '--objective', 'Fix it')
                 self.assertEqual(2, result.returncode)
@@ -269,10 +269,10 @@ class CurrentStateCliTests(unittest.TestCase):
                 self.assertEqual(before, {p: p.read_bytes() for p in root.rglob('*') if p.is_file()})
             result = self.run_cli(root, 'init', '--file', 'tasks/my choice.md', '--objective', 'Explicit path')
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn('Explicit path', (root / 'tasks/my choice.md').read_text())
+            self.assertIn('Explicit path', (root / 'tasks/my choice.md').read_text(encoding='utf-8'))
             again = self.run_cli(root, 'init', '--file', 'tasks/my choice.md', '--objective', 'Ignored')
             self.assertEqual(0, again.returncode, again.stderr)
-            self.assertNotIn('Ignored', (root / 'tasks/my choice.md').read_text())
+            self.assertNotIn('Ignored', (root / 'tasks/my choice.md').read_text(encoding='utf-8'))
             self.assertEqual('missing', RUNTIME.resolve_state(root).status)
 
     def test_init_file_validates_portable_containment_and_selector_conflicts(self):
@@ -293,11 +293,11 @@ class CurrentStateCliTests(unittest.TestCase):
             root = Path(tmp)
             (root / '.tasks').mkdir()
             path = root / '.tasks/old.md'
-            path.write_text('Keep legacy evidence.\n')
+            path.write_text('Keep legacy evidence.\n', encoding='utf-8')
             result = self.run_cli(root, 'init', '--task', 'old', '--objective', 'Do not overwrite')
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual('.tasks/old.md\n', result.stdout)
-            self.assertEqual('Keep legacy evidence.\n', path.read_text())
+            self.assertEqual('Keep legacy evidence.\n', path.read_text(encoding='utf-8'))
             self.assertFalse((root / 'tasks').exists())
 
     def test_discovery_merges_owned_and_legacy_candidates_with_legacy_priority(self):
@@ -306,33 +306,33 @@ class CurrentStateCliTests(unittest.TestCase):
             self.assertEqual(0, self.run_cli(root, 'init', '--task', 'fix', '--objective', 'Fix').returncode)
             self.assertEqual('tasks/fix.md', RUNTIME.resolve_state(root).relative_path)
             (root / '.tasks').mkdir()
-            (root / '.tasks/old.md').write_text('LEGACY\n')
+            (root / '.tasks/old.md').write_text('LEGACY\n', encoding='utf-8')
             result = RUNTIME.resolve_state(root)
             self.assertEqual('ambiguous', result.status)
             self.assertEqual(('.tasks/old.md', 'tasks/fix.md'), result.candidates)
             self.assertEqual('LEGACY\n', self.run_cli(root, 'read', '--task', 'old').stdout)
-            (root / 'tasks/old.md').write_text('NEW\n')
+            (root / 'tasks/old.md').write_text('NEW\n', encoding='utf-8')
             self.assertEqual('NEW\n', self.run_cli(root, 'read', '--task', 'old').stdout)
             (root / 'work').mkdir()
-            (root / 'work/task-state.md').write_text('SESSION\n')
+            (root / 'work/task-state.md').write_text('SESSION\n', encoding='utf-8')
             self.assertEqual('work/task-state.md', RUNTIME.resolve_state(root).relative_path)
 
     def test_manual_check_snapshot_problems_selection_codes_and_env_selectors(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / 'THOUGHTS.md'
-            path.write_text(record())
+            path.write_text(record(), encoding='utf-8')
             checked = self.run_cli(root, 'check', TASK_STATE_FILE='THOUGHTS.md')
             self.assertEqual(0, checked.returncode, checked.stderr)
             self.assertEqual('OK: THOUGHTS.md (current-state block 14/3000 characters)\n', checked.stdout)
             snapshot = root / RUNTIME.snapshot_relative_path('THOUGHTS.md')
-            self.assertEqual(record(), snapshot.read_text())
-            path.write_text(OPEN)
+            self.assertEqual(record(), snapshot.read_text(encoding='utf-8'))
+            path.write_text(OPEN, encoding='utf-8')
             broken = self.run_cli(root, 'check', '--file', 'THOUGHTS.md')
             self.assertEqual(1, broken.returncode, broken.stderr)
             self.assertIn('missing their pair', broken.stdout)
-            self.assertEqual(record(), snapshot.read_text())
-            (root / 'legacy.md').write_text('legacy\n')
+            self.assertEqual(record(), snapshot.read_text(encoding='utf-8'))
+            (root / 'legacy.md').write_text('legacy\n', encoding='utf-8')
             legacy = self.run_cli(root, 'check', '--file', 'legacy.md')
             self.assertEqual(0, legacy.returncode, legacy.stderr)
             self.assertEqual('OK: legacy.md (no current-state block)\n', legacy.stdout)
@@ -349,11 +349,11 @@ class CurrentStateCliTests(unittest.TestCase):
     def test_session_bindings_migrate_refuse_both_conflicts_and_remove_both(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / 'one.md').write_text(record())
-            (root / 'two.md').write_text(record('Second\n'))
+            (root / 'one.md').write_text(record(), encoding='utf-8')
+            (root / 'two.md').write_text(record('Second\n'), encoding='utf-8')
             legacy = root / RUNTIME.legacy_session_relative_path('session')
             legacy.parent.mkdir(parents=True)
-            legacy.write_text('one.md\n')
+            legacy.write_text('one.md\n', encoding='utf-8')
             conflict = self.run_cli(root, 'activate', '--file', 'two.md', '--session', 'session')
             self.assertEqual(2, conflict.returncode)
             self.assertFalse((root / '.task-state').exists())
@@ -362,8 +362,8 @@ class CurrentStateCliTests(unittest.TestCase):
             self.assertEqual(0, selected.returncode, selected.stderr)
             expected = '.task-state/sessions/' + hashlib.sha256(b'session').hexdigest() + '.ref'
             self.assertEqual(expected + '\n', selected.stdout)
-            self.assertEqual('one.md\n', (root / expected).read_text())
-            legacy.write_text('two.md\n')
+            self.assertEqual('one.md\n', (root / expected).read_text(encoding='utf-8'))
+            legacy.write_text('two.md\n', encoding='utf-8')
             conflict = self.run_cli(root, 'activate', '--file', 'one.md', '--session', 'session')
             self.assertEqual(2, conflict.returncode)
             self.assertIn('Next: verify.', RUNTIME.recovery_context_from_root(root, session_id='session'))

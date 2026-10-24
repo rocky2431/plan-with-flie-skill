@@ -47,11 +47,11 @@ class ObservationRepairTests(unittest.TestCase):
         self.assertIsNone(self.sense(translated))
         intended = translated.replace('- first\n', '- revised deliberately\n')
         self.assertIn('earlier history entry', self.sense(intended))
-        self.assertEqual(translated, self.copy.read_text())
+        self.assertEqual(translated, self.copy.read_text(encoding='utf-8'))
         for i in range(6):
             intended = intended.replace('Next:', f'Next {i}:', 1) + f'- verified {i}\n'
             self.assertIsNone(self.sense(intended))
-            self.assertEqual(intended, self.copy.read_text())
+            self.assertEqual(intended, self.copy.read_text(encoding='utf-8'))
         self.assertIn('earlier history entry', self.sense(intended.replace('- second\n', '')))
 
     def test_persistent_absolute_damage_reports_once_and_preserves_copy(self):
@@ -60,8 +60,8 @@ class ObservationRepairTests(unittest.TestCase):
         self.assertIn('missing their pair', self.sense(broken))
         for i in range(6):
             self.assertIsNone(self.sense(broken + f'\nedit {i}'))
-            self.assertEqual(self.good, self.copy.read_text())
-        self.assertEqual(broken + '\nedit 5', self.seen.read_text())
+            self.assertEqual(self.good, self.copy.read_text(encoding='utf-8'))
+        self.assertEqual(broken + '\nedit 5', self.seen.read_text(encoding='utf-8'))
         oversize = record('中' * 3001 + '\n')
         self.assertIn('3002 characters', self.sense(oversize))
         self.assertIsNone(self.sense(oversize + '<!-- later edit -->\n'))
@@ -112,7 +112,7 @@ class ObservationRepairTests(unittest.TestCase):
         self.copy.write_bytes(b'\xff')
         report = self.sense(OPEN)
         self.assertIn('missing their pair', report)
-        self.assertEqual(OPEN, self.seen.read_text())
+        self.assertEqual(OPEN, self.seen.read_text(encoding='utf-8'))
 
     def test_incident_replay_reports_once_with_exact_pre_damage_copy(self):
         self.assertIsNone(self.sense())
@@ -121,12 +121,12 @@ class ObservationRepairTests(unittest.TestCase):
         self.assertIn('block disappeared', report)
         self.assertIn(self.copy.relative_to(self.root).as_posix(), report)
         self.assertIn('If the change was intended, carry on: later edits are compared with this version.', report)
-        self.assertEqual(self.good, self.copy.read_text())
+        self.assertEqual(self.good, self.copy.read_text(encoding='utf-8'))
         self.assertIsNone(self.sense())
 
     def test_threads_report_exactly_once(self):
         self.assertIsNone(self.sense())
-        self.path.write_text(record('中' * 3100 + '\n', history='## History\n- second\n'))
+        self.path.write_text(record('中' * 3100 + '\n', history='## History\n- second\n'), encoding='utf-8')
         barrier = threading.Barrier(16)
 
         def run(_):
@@ -137,11 +137,11 @@ class ObservationRepairTests(unittest.TestCase):
             reports = [r for r in pool.map(run, range(16)) if r]
         self.assertEqual(1, len(reports), reports)
         self.assertIn('earlier history entry', reports[0])
-        self.assertEqual(self.good, self.copy.read_text())
+        self.assertEqual(self.good, self.copy.read_text(encoding='utf-8'))
 
     def test_subprocesses_report_exactly_once(self):
         self.assertIsNone(self.sense())
-        self.path.write_text(OPEN)
+        self.path.write_text(OPEN, encoding='utf-8')
         source = (
             'import sys; from pathlib import Path; '
             'sys.path.insert(0, sys.argv[1]); '
@@ -164,7 +164,7 @@ class ObservationRepairTests(unittest.TestCase):
                 self.assertEqual(0, process.returncode, error)
                 self.assertEqual('', error)
             self.assertEqual(1, sum(bool(output) for output, _ in outputs), outputs)
-            self.assertEqual(self.good, self.copy.read_text())
+            self.assertEqual(self.good, self.copy.read_text(encoding='utf-8'))
         finally:
             for process in processes:
                 if process.poll() is None:
@@ -207,7 +207,7 @@ class MarkerAndRecoveryRepairTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(record())
+                path.write_text(record(), encoding='utf-8')
                 event = 'UserPromptSubmit' if host == 'kimi' else 'SessionStart'
                 first = helper.run_hook(host, root, event)
                 self.assertNotIn('Task-state sensor', first)
@@ -216,12 +216,12 @@ class MarkerAndRecoveryRepairTests(unittest.TestCase):
                 else:
                     self.assertTrue(first)
                 copy = root / RUNTIME.snapshot_relative_path('tasks/fix.md')
-                self.assertEqual(record(), copy.read_text())
-                path.write_text(OPEN)
+                self.assertEqual(record(), copy.read_text(encoding='utf-8'))
+                path.write_text(OPEN, encoding='utf-8')
                 report = helper.run_hook(host, root, 'UserPromptSubmit' if host == 'kimi' else 'PostToolUse')
                 self.assertIn('missing their pair', report)
                 self.assertIn(copy.relative_to(root).as_posix(), report)
-                self.assertEqual(record(), copy.read_text())
+                self.assertEqual(record(), copy.read_text(encoding='utf-8'))
                 if host == 'kimi':
                     self.assertLess(report.index('Task-state sensor'), report.index('Task-state recovery'))
 
@@ -232,10 +232,10 @@ class MarkerAndRecoveryRepairTests(unittest.TestCase):
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
                 path.parent.mkdir()
-                path.write_text(record())
+                path.write_text(record(), encoding='utf-8')
                 output = helper.run_hook('grok', root, event)
                 self.assertEqual(bool(output), event == 'PostToolUse')
-                self.assertEqual(record(), (root / RUNTIME.snapshot_relative_path('tasks/fix.md')).read_text())
+                self.assertEqual(record(), (root / RUNTIME.snapshot_relative_path('tasks/fix.md')).read_text(encoding='utf-8'))
 
 
 class CommandRepairTests(unittest.TestCase):
@@ -250,12 +250,12 @@ class CommandRepairTests(unittest.TestCase):
                 root = Path(tmp)
                 initialized = self.cli(root, 'init', selector, value, '--objective', 'Real outcome')
                 self.assertEqual(0, initialized.returncode, initialized.stderr)
-                self.assertEqual('*\n', (root / '.task-state/.gitignore').read_text())
+                self.assertEqual('*\n', (root / '.task-state/.gitignore').read_text(encoding='utf-8'))
                 child = root / 'src'
                 child.mkdir()
                 result = self.cli(root, 'read', selector, value, cwd=child)
                 self.assertEqual(0, result.returncode, result.stderr)
-                self.assertEqual((root / initialized.stdout.strip()).read_text(), result.stdout)
+                self.assertEqual((root / initialized.stdout.strip()).read_text(encoding='utf-8'), result.stdout)
                 self.assertTrue(result.stdout.startswith('# ' + ('demo' if selector == '--task' else 'design') + '\n'))
 
     def test_readme_ids_are_reserved_and_template_guidance_precedes_block(self):
@@ -267,7 +267,7 @@ class CommandRepairTests(unittest.TestCase):
                 self.assertFalse((root / 'tasks').exists())
             result = self.cli(root, 'init', '--task', 'real', '--objective', 'Objective')
             self.assertEqual(0, result.returncode, result.stderr)
-            text = (root / result.stdout.strip()).read_text()
+            text = (root / result.stdout.strip()).read_text(encoding='utf-8')
             guidance = '<!-- Keep the current-state block true and short. Append to History; do not rewrite earlier entries. -->'
             self.assertLess(text.index(guidance), text.index(OPEN))
             self.assertEqual('', RUNTIME.parse_current_state(text).history.strip().removeprefix('## History').strip())
@@ -281,10 +281,10 @@ class CommandRepairTests(unittest.TestCase):
             outside = base / 'outside'
             outside.mkdir()
             (root / '.tasks').symlink_to(outside, target_is_directory=True)
-            (root / 'record.md').write_text(record())
+            (root / 'record.md').write_text(record(), encoding='utf-8')
             external = outside / '.sessions' / Path(RUNTIME.legacy_session_relative_path('owner')).name
             external.parent.mkdir()
-            external.write_text('other.md\n')
+            external.write_text('other.md\n', encoding='utf-8')
             selected = self.cli(root, 'activate', '--file', 'record.md', '--session', 'owner')
             self.assertEqual(0, selected.returncode, selected.stderr)
             binding = root / RUNTIME.session_relative_path('owner')
@@ -292,17 +292,17 @@ class CommandRepairTests(unittest.TestCase):
             removed = self.cli(root, 'deactivate', '--session', 'owner')
             self.assertEqual(0, removed.returncode, removed.stderr)
             self.assertFalse(binding.exists())
-            self.assertEqual('other.md\n', external.read_text())
+            self.assertEqual('other.md\n', external.read_text(encoding='utf-8'))
 
     def test_check_failure_names_all_passing_copies_and_stays_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / 'record.md'
             for i in range(3):
-                path.write_text(record(f'Next: {i}\n'))
+                path.write_text(record(f'Next: {i}\n'), encoding='utf-8')
                 result = self.cli(root, 'check', '--file', 'record.md')
                 self.assertEqual(0, result.returncode, result.stderr)
-            path.write_text(OPEN)
+            path.write_text(OPEN, encoding='utf-8')
             copy = Path(RUNTIME.snapshot_relative_path('record.md'))
             for _ in range(2):
                 result = self.cli(root, 'check', '--file', 'record.md')
