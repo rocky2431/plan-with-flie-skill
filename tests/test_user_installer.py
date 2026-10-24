@@ -306,6 +306,78 @@ command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
             stale = subprocess.run(args + ["--json"], env=env, capture_output=True, text=True)
             self.assertEqual(1, stale.returncode)
 
+    def test_sensor_install_uninstall_preserves_foreign_entries_and_doctor_checks_each_event(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            self.seed_configs(home)
+            configs = (home / '.claude/settings.json', home / '.zcode/cli/config.json')
+            foreign = {"matcher": "Read", "hooks": [{"type": "command", "command": "echo foreign-sensor"}]}
+            for path in configs:
+                data = json.loads(path.read_text())
+                events = data['hooks']['events'] if path.name == 'config.json' else data['hooks']
+                events['PostToolUse'] = [foreign]
+                path.write_text(json.dumps(data))
+            kimi = home / '.kimi-code/config.toml'
+            kimi.write_text('theme = "dark"\n[[hooks]]\nevent = "PostToolUse"\ncommand = "echo foreign-kimi"\n')
+            for _ in range(2):
+                result = self.run_installer(home, 'install')
+                self.assertEqual(0, result.returncode, result.stderr)
+            for path in configs:
+                data = json.loads(path.read_text())
+                events = data['hooks']['events'] if path.name == 'config.json' else data['hooks']
+                self.assertEqual(2, len(events['PostToolUse']))
+                self.assertEqual(foreign, events['PostToolUse'][0])
+                managed = events['PostToolUse'][1]
+                self.assertNotIn('matcher', managed)
+                self.assertEqual(10, managed['hooks'][0]['timeout'])
+                original = path.read_text()
+                # Two recovery entries cannot hide a missing sensor (same total count).
+                events['PostToolUse'] = [foreign]
+                events['SessionStart'].append(events['SessionStart'][-1])
+                path.write_text(json.dumps(data))
+                self.assertEqual(1, self.run_installer(home, 'doctor', '--json').returncode)
+                path.write_text(original)
+            hooks = tomllib.loads(kimi.read_text())['hooks']
+            self.assertEqual(['PostToolUse', 'UserPromptSubmit'], [h['event'] for h in hooks])
+            self.assertEqual(0, self.run_installer(home, 'doctor', '--json').returncode)
+            original = kimi.read_text()
+            # An old managed PostToolUse entry is drift, and reinstall removes it.
+            managed = hooks[-1]
+            stale_sensor = ('[[hooks]]\nevent = "PostToolUse"\ncommand = ' +
+                            json.dumps(managed['command']) + '\ntimeout = 10\n')
+            kimi.write_text(original.replace('# END task-state-with-files managed hooks',
+                                             stale_sensor + '# END task-state-with-files managed hooks'))
+            self.assertEqual(1, self.run_installer(home, 'doctor', '--json').returncode)
+            self.assertEqual(0, self.run_installer(home, 'install').returncode)
+            self.assertEqual(original, kimi.read_text())
+            self.assertEqual(0, self.run_installer(home, 'doctor', '--json').returncode)
+            kimi.write_text(original.replace('event = "UserPromptSubmit"', 'event = "SessionStart"'))
+            self.assertEqual(1, self.run_installer(home, 'doctor', '--json').returncode)
+            kimi.write_text(original)
+            result = self.run_installer(home, 'uninstall')
+            self.assertEqual(0, result.returncode, result.stderr)
+            for path in configs:
+                data = json.loads(path.read_text())
+                events = data['hooks']['events'] if path.name == 'config.json' else data['hooks']
+                self.assertEqual([foreign], events['PostToolUse'])
+            self.assertEqual([{'event': 'PostToolUse', 'command': 'echo foreign-kimi'}],
+                             tomllib.loads(kimi.read_text())['hooks'])
+
+    def test_malformed_post_tool_groups_fail_preflight_before_any_install(self):
+        for host in ('claude', 'zcode'):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as temporary:
+                home = Path(temporary)
+                self.seed_configs(home)
+                path = home / ('.claude/settings.json' if host == 'claude' else '.zcode/cli/config.json')
+                data = json.loads(path.read_text())
+                events = data['hooks'] if host == 'claude' else data['hooks']['events']
+                events['PostToolUse'] = 'invalid'
+                path.write_text(json.dumps(data))
+                before = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+                result = self.run_installer(home, 'install')
+                self.assertEqual(2, result.returncode)
+                self.assertEqual(before, {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()})
+
 
 
 if __name__ == "__main__":

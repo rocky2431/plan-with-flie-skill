@@ -4,72 +4,63 @@ The consumer is an agent or owner who did not read the earlier conversation. Pre
 what changes their next decision; let the task determine length. These examples explain
 content quality, not mandatory extra files or a fixed sequence of reasoning.
 
-## A useful checkpoint
+## A useful record
 
 ```markdown
-## Current understanding
+# Export the complete inventory
 
-Intent: Generate a complete local inventory, including items on later pages.
-The user clarified that a quick sample does not satisfy the request.
-Completion: The export covers the server-reported total, with no duplicate item IDs.
+<!-- current-state -->
+Objective: a complete local inventory, including items on later pages. The user
+clarified that a quick sample does not satisfy the request.
+Done when: the export covers the server-reported total with no duplicate item IDs.
+Known: page 1 returns 50 items, total=137, and a next_cursor (history 10:05).
+Hypothesis, not verified: the missing items are on later pages.
+Progress: response shape understood; traversal works for page 1 only; no complete
+export exists yet.
+Next: fetch the next page with its returned cursor and compare IDs.
+<!-- /current-state -->
 
-Observed: The first response contains 50 items, total=137, and a next_cursor (E1).
-Hypothesis: The missing items are on subsequent pages; not yet verified by traversal.
-Approach: Follow the server cursor and reconcile IDs against the total.
-
-- S1 done: identify response shape; evidence E1.
-- S2 in_progress: implement traversal; first page works, later pages unverified.
-- S3 pending, depends on S2: verify all 137 items and write the final export.
-
-Next action: Fetch the next page using its returned cursor and compare IDs.
-
-## Judgments and corrections
-
-- The initial interpretation treated the first page as the complete result.
-  E1 and the user's clarification invalidate that interpretation. Preserve the
-  total and cursor through every checkpoint; a successful request is insufficient.
-- Increasing page_size returned the same 50-item cap (E2). Under this API version,
-  do not repeat that attempt. Revisit only if the documented limit changes.
-
-## Evidence and artifacts
-
-- E1: evidence/page-1.json; response total=137, 50 unique IDs, next_cursor present.
-- E2: evidence/page-size-check.txt; tested page_size=500, response still 50 items.
-- collector.py: traversal implementation is incomplete; no complete export exists.
+## History
+- 10:05 Evidence: evidence/page-1.json — total=137, 50 unique IDs, next_cursor present.
+- 10:12 Correction: treating page 1 as the full result was wrong (page-1.json and the
+  user's clarification). Keep total and cursor in view; a successful request is not coverage.
+- 10:20 Evidence: page_size=500 still returned 50 items (evidence/page-size-check.txt).
+  Do not repeat under this API version; revisit only if the documented limit changes.
 ```
 
-This checkpoint preserves intent, partial progress, a hypothesis, a rejected approach,
-and the evidence needed to continue. It does not label the hypothesis as proven or
-claim the unfinished collector works. If the server changes, recheck the relevant
-premise rather than treating the old lesson as a permanent prohibition.
+The current state says what is true now and what to do next. It labels the hypothesis
+as unverified and does not claim the unfinished collector works. History keeps the
+evidence and the rejected attempt with the condition that would justify revisiting it.
+If the server changes, recheck that premise instead of treating the old lesson as a
+permanent prohibition.
 
 ## Research and design also make progress
 
 An exploratory task may have no implementation steps yet. Track the question being
 resolved, conclusions supported so far, live alternatives, and the evidence that would
-distinguish them. For example:
+distinguish them:
 
 ```markdown
-Intent: Select a local document search approach that preserves exact identifiers.
-Known: Keyword search retrieved exact IDs in the sample; paraphrased questions missed
-two relevant documents (E3). This is a sample result, not a general ranking.
-Current judgment: Exact-match retrieval is necessary; semantic retrieval may supplement
-it. We have not established that a vector-only design meets the requirement.
-Open: Does a combined approach recover the misses without losing exact-ID results?
-Next: Test both query types on the same held-out documents and inspect the actual hits.
+<!-- current-state -->
+Objective: choose a local document search approach that preserves exact identifiers.
+Supported so far: exact-match retrieval is necessary; semantic retrieval may supplement
+it. Not established: that a vector-only design meets the requirement.
+Open: does a combined approach recover the paraphrase misses without losing exact IDs?
+Next: run both query types on the same held-out documents and inspect the actual hits.
+<!-- /current-state -->
 ```
 
 A new agent should run the outstanding comparison rather than restart a broad tool
-survey. Keep the source documents and evaluation queries reachable through E3.
+survey. Keep the source documents and evaluation queries reachable from History.
 
 ## Maintain an existing document
 
-If `documents/search/THOUGHTS.md` already owns an inquiry, read it with `read --file`
-and update its `## Current position`: the supported judgment, unsettled comparison,
-next observation and result location. Keep research evidence below it. Do not create
-`.tasks/search.md` or replace its structure with the standalone template. A bounded
-result can stay in its existing result section; a separately delivered report keeps
-its own file. No companion Skill is required to maintain either form.
+If `documents/search/THOUGHTS.md` already owns an inquiry, read it with `read --file`,
+wrap its `## Current position` body in the current-state markers once, and keep that
+section current: the supported judgment, the unsettled comparison, the next observation
+and the result location. Leave its research evidence and other sections in their own
+structure; do not create `tasks/search.md` or insert the standalone template. No
+companion Skill is required to maintain either form.
 
 If `.goals/export.goal.md` owns execution state, edit only `## Carry-over`, for example:
 
@@ -87,13 +78,13 @@ Read this before acting; update it from current evidence before finishing.
 Leave Intent, Boundary, Anchor, Stop condition, Verification, Acceptance requirement
 text and labelled Means declarations intact. Use the goal's existing confirmation
 process for requested changes; state maintenance grants no authority to change them.
-Finish and retain the goal under its own lifecycle, never archive it as a Task note.
+UltraGoal recovers its own goal; finish and retain the goal under its own lifecycle and
+never archive it as a task record.
 
-If `.tasks/export.md` already owns a longer milestone, keep it in place when a goal
+If `tasks/export.md` already owns a longer milestone, keep it in place when a goal
 starts. The goal carries its accepted scope and a locator to that record; update the
-record's current facts, judgments and next action there. A reference must resolve to
-actual content, not another reference back to the goal. A dated recovery summary is
-derived evidence, not a second plan. Select one recovery provider independently of
+record's current state and history there. A reference must resolve to actual content,
+not another reference back to the goal. Select one recovery provider independently of
 where the state lives; manual reading does not activate a hook.
 
 ## Avoid semantic loss during updates
@@ -111,11 +102,11 @@ Do not fabricate reasons that were never established. A reflection is a revisabl
 interpretation of evidence, not proof of its own correctness. Preserve a user correction
 as a correction instead of silently rewriting history to make the original plan seem right.
 
-When the note grows, keep the current understanding readable and move bulky evidence
-to referenced artifacts. Merge redundant historical entries, retaining the reason for
-important reversals. Update affected passages locally; repeatedly summarizing a summary
-can drop qualifications and turn tentative ideas into facts. At context pressure, save
-the current unresolved question and evidence before starting another investigation.
+Keep the current state short by removing what is no longer true or no longer steers
+work, with the reason appended to History. Do not summarize History into the current
+state; repeatedly summarizing a summary drops qualifications and turns tentative ideas
+into facts. Move bulky evidence into referenced artifacts. At context pressure, save the
+current unresolved question and evidence before starting another investigation.
 
 ## Check the receiver, not just the file
 
@@ -127,6 +118,7 @@ blindly preserving an old decision is not the objective.
 
 For evaluation, compare against the previous Skill using the same task and available
 artifacts. Include user corrections, misleading early hypotheses, failed attempts,
-partial implementation, and an interrupted verification. Inspect final artifacts,
+partial implementation, an authorization that changes mid-task, and an interrupted
+verification. Inspect final artifacts, stale statements in the delivered current state,
 unsupported claims, repeated work, recovery effort, and total task cost. A single fresh
 context pass provides evidence about that case; it is not proof of every host lifecycle.

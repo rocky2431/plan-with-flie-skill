@@ -12,17 +12,36 @@ import sys
 from task_state_runtime import (
     SESSION_STATE,
     STATE_BINDING,
+    CURRENT_STATE_LIMIT,
+    MANAGED_TASKS_LINE,
     Resolution,
+    contained_path,
+    ensure_runtime_directory,
     find_task_root,
+    format_sensor_report,
+    legacy_session_relative_path,
+    managed_tasks_directory,
+    observe,
+    parse_current_state,
     resolve_relative_target,
     resolve_state,
     session_relative_path,
+    task_record_relative_path,
     task_relative_path,
 )
 
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_ROOT / "assets" / "task-state-template.md"
+TASKS_README = f"""{MANAGED_TASKS_LINE}
+# tasks/
+
+This folder is managed by the task-state-with-files Skill. Each file is one task's
+working record: a short current-state block at the top, followed by append-only
+history. Records are owner-readable working state, not product documentation.
+Finished records move to `tasks/archive/`. Whether to commit them is the project's
+choice; runtime state lives in `.task-state/` and is never committed.
+"""
 
 
 def _write_new(path: Path, content: str) -> bool:
@@ -49,10 +68,7 @@ def _root(args: argparse.Namespace) -> Path:
 
 
 def _destination(root: Path, relative: str) -> Path:
-    destination = root / relative
-    if not destination.resolve().is_relative_to(root):
-        raise ValueError("The state destination resolves outside the task root.")
-    return destination
+    return contained_path(root, relative)
 
 
 def _selection(args: argparse.Namespace) -> Resolution:
@@ -76,14 +92,19 @@ def command_init(args: argparse.Namespace) -> int:
         return 2
 
     if args.task is not None:
-        relative = task_relative_path(args.task)
+        relative = task_record_relative_path(root, args.task)
+        if relative == task_relative_path(args.task):
+            task_dir = _destination(root, "tasks")
+            if task_dir.exists() or task_dir.is_symlink():
+                if not managed_tasks_directory(root):
+                    raise ValueError("tasks/ exists but is not managed by task-state-with-files; choose a location with --file <relative-path>.")
+            else:
+                task_dir.mkdir()
+                _write_new(_destination(root, "tasks/README.md"), TASKS_README)
         destination = _destination(root, relative)
-        if destination.exists() or destination.is_symlink():
-            existing = resolve_relative_target(root, relative)
-            if existing.status != "found":
-                raise ValueError(existing.message)
-            print(relative)
-            return 0
+    elif args.file is not None:
+        relative = args.file
+        destination = _destination(root, relative)
     else:
         relative = SESSION_STATE.as_posix()
         destination = _destination(root, relative)
@@ -95,10 +116,18 @@ def command_init(args: argparse.Namespace) -> int:
             print(resolution.relative_path)
             return 0
 
+    if args.task is not None or args.file is not None:
+        if destination.exists() or destination.is_symlink():
+            existing = resolve_relative_target(root, relative)
+            if existing.status != "found":
+                raise ValueError(existing.message)
+            ensure_runtime_directory(root)
+            print(relative)
+            return 0
+
     try:
         content = (TEMPLATE.read_text(encoding="utf-8")
-                   .replace("{{TASK_ID}}", args.task or "session")
-                   .replace("{{STATE_PATH}}", relative)
+                   .replace("{{TITLE}}", args.task or (destination.stem if args.file is not None else "session"))
                    .replace("{{OBJECTIVE}}", objective))
     except (OSError, UnicodeError) as exc:
         print(f"Cannot read the bundled state template: {exc}", file=sys.stderr)
@@ -109,6 +138,7 @@ def command_init(args: argparse.Namespace) -> int:
         if resolution.status != "found":
             print("Task state appeared concurrently but is not usable.", file=sys.stderr)
             return 2
+    ensure_runtime_directory(root)
     print(relative)
     return 0
 
@@ -154,7 +184,17 @@ def command_activate(args: argparse.Namespace) -> int:
     relative = session_relative_path(args.session)
     binding = _destination(selected.root, relative)
     expected = selected.relative_path + "\n"
-    _write_new(_destination(selected.root, ".tasks/.sessions/.gitignore"), "*\n")
+    candidates = [binding]
+    try:
+        legacy = _destination(selected.root, legacy_session_relative_path(args.session))
+        if legacy.exists():
+            candidates.append(legacy)
+    except (OSError, RuntimeError, ValueError):
+        pass
+    for existing in candidates:
+        if (existing.exists() or existing.is_symlink()) and existing.read_text(encoding="utf-8") != expected:
+            raise ValueError("This session selected another record. Deactivate it before switching.")
+    ensure_runtime_directory(selected.root)
     if not _write_new(binding, expected) and binding.read_text(encoding="utf-8") != expected:
         raise ValueError("This session selected another record. Deactivate it before switching.")
     print(relative)
@@ -162,8 +202,13 @@ def command_activate(args: argparse.Namespace) -> int:
 
 
 def command_deactivate(args: argparse.Namespace) -> int:
-    binding = _destination(_root(args), session_relative_path(args.session))
-    binding.unlink(missing_ok=True)
+    root = _root(args)
+    _destination(root, session_relative_path(args.session)).unlink(missing_ok=True)
+    try:
+        legacy = _destination(root, legacy_session_relative_path(args.session))
+        legacy.unlink(missing_ok=True)
+    except (OSError, RuntimeError, ValueError):
+        pass
     return 0
 
 
@@ -191,13 +236,34 @@ def command_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_check(args: argparse.Namespace) -> int:
+    resolution = _selection(args)
+    if resolution.status != "found":
+        print(resolution.message or "No task state found.", file=sys.stderr)
+        if resolution.candidates:
+            print("Candidates: " + ", ".join(resolution.candidates), file=sys.stderr)
+        return 2
+    text = resolution.path.read_text(encoding="utf-8")
+    # Compare with the newest passing copy without advancing what hooks have seen,
+    # so repeated checks of an unchanged record give the same answer.
+    observation = observe(resolution, text, report=True, advance=False)
+    if observation.problems:
+        print(observation.report or format_sensor_report(resolution, observation.problems, advancing=False))
+        return 1
+    block = parse_current_state(text)
+    detail = (f"current-state block {len(block.content)}/{CURRENT_STATE_LIMIT} characters"
+              if block.status == "ok" else "no current-state block")
+    print(f"OK: {resolution.relative_path} ({detail})")
+    return 0
+
+
 def _add_root(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", help="Pin the exact task root; default: discover ancestors up to the nearest Git boundary")
 
 
 def _add_selection(parser: argparse.ArgumentParser) -> None:
     selection = parser.add_mutually_exclusive_group()
-    selection.add_argument("--task", help="Named task ID under .tasks (or TASK_STATE_TASK)")
+    selection.add_argument("--task", help="Named task ID under tasks, with legacy .tasks fallback (or TASK_STATE_TASK)")
     selection.add_argument("--file", help="Exact task file relative to the task root (or TASK_STATE_FILE)")
     _add_root(parser)
 
@@ -208,8 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init", help="Create a task record once without overwriting existing work")
     init_parser.add_argument("--objective", required=True)
-    init_parser.add_argument("--task", help="Create a named .tasks/<id>.md record; omission retains legacy session storage")
-    _add_root(init_parser)
+    _add_selection(init_parser)
     init_parser.set_defaults(handler=command_init)
 
     bind_parser = subparsers.add_parser("bind", help="Bind a repository-shared state file")
@@ -224,6 +289,10 @@ def build_parser() -> argparse.ArgumentParser:
     read_parser = subparsers.add_parser("read", help="Read the complete selected task record without summarizing or truncating")
     _add_selection(read_parser)
     read_parser.set_defaults(handler=command_read)
+
+    check_parser = subparsers.add_parser("check", help="Check factual integrity and keep the last passing copy")
+    _add_selection(check_parser)
+    check_parser.set_defaults(handler=command_check)
 
     activate_parser = subparsers.add_parser("activate", help="Select an existing record for one native session")
     _add_selection(activate_parser)

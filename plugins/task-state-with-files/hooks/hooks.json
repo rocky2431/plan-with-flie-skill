@@ -13,6 +13,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -n \"${ZCODE_PLUGIN_ROOT:-}\" ]; then python3 \"$ZCODE_PLUGIN_ROOT/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host zcode; else python3 \"${CLAUDE_PLUGIN_ROOT:?}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host claude; fi",
+            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\skills\\task-state-with-files\\scripts\\lifecycle_hook.py\" --host claude",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

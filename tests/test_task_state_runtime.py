@@ -328,7 +328,7 @@ class TaskStateCliTests(unittest.TestCase):
             root = Path(tmpdir)
             first = self.run_cli(root, "init", "--task", "feature", "--objective", "Finish the requested behavior")
             self.assertEqual(0, first.returncode, first.stderr)
-            task = root / ".tasks" / "feature.md"
+            task = root / "tasks" / "feature.md"
             content = task.read_text(encoding="utf-8")
             self.assertIn("Finish the requested behavior", content)
             self.assertNotIn("{{", content)
@@ -356,7 +356,7 @@ class TaskStateCliTests(unittest.TestCase):
             objective = "Support literal {{TASK_ID}} and {{STATE_PATH}} in user input."
             result = self.run_cli(root, "init", "--task", "literal", "--objective", objective)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn(objective, (root / ".tasks" / "literal.md").read_text(encoding="utf-8"))
+            self.assertIn(objective, (root / "tasks" / "literal.md").read_text(encoding="utf-8"))
 
     def test_resolve_keeps_json_diagnostics_for_an_unavailable_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -385,9 +385,9 @@ class TaskStateCliTests(unittest.TestCase):
             root = Path(tmpdir)
             invalid = self.run_cli(root, "init", "--task", "../escape", "--objective", "Not permitted")
             self.assertEqual(2, invalid.returncode)
-            self.assertFalse((root / ".tasks").exists())
+            self.assertFalse((root / "tasks").exists())
             try:
-                (root / ".tasks").symlink_to(Path(outside_dir), target_is_directory=True)
+                (root / "tasks").symlink_to(Path(outside_dir), target_is_directory=True)
             except OSError as exc:
                 self.skipTest(f"symlinks unavailable: {exc}")
             escaped = self.run_cli(root, "init", "--task", "escape", "--objective", "Not permitted")
@@ -403,7 +403,7 @@ class TaskStateCliTests(unittest.TestCase):
             self.assertEqual(2, missing.returncode)
             self.assertEqual("", missing.stdout)
 
-            content = (source / ".tasks" / "handoff.md").read_text(encoding="utf-8")
+            content = (source / "tasks" / "handoff.md").read_text(encoding="utf-8")
             (destination / ".tasks").mkdir()
             (destination / ".tasks" / "handoff.md").write_text(content, encoding="utf-8")
             received = self.run_cli(destination, "read", "--task", "handoff")

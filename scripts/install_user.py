@@ -303,6 +303,9 @@ def _install_zcode_config(path: Path) -> None:
         }
     )
     events["SessionStart"] = groups
+    groups = _remove_managed_groups(events.get("PostToolUse"))
+    groups.append({"hooks": [{"type": "command", "command": _hook_command("zcode"), "timeout": 10}]})
+    events["PostToolUse"] = groups
     _write_json(path, config)
 
 
@@ -316,11 +319,12 @@ def _uninstall_zcode_config(path: Path) -> None:
     events = hooks.get("events")
     if not isinstance(events, dict):
         return
-    groups = _remove_managed_groups(events.get("SessionStart"))
-    if groups:
-        events["SessionStart"] = groups
-    else:
-        events.pop("SessionStart", None)
+    for event in ("SessionStart", "PostToolUse"):
+        groups = _remove_managed_groups(events.get(event))
+        if groups:
+            events[event] = groups
+        else:
+            events.pop(event, None)
     _write_json(path, config)
 
 
@@ -344,6 +348,9 @@ def _install_claude_config(path: Path) -> None:
         }
     )
     hooks["SessionStart"] = groups
+    groups = _remove_managed_groups(hooks.get("PostToolUse"))
+    groups.append({"hooks": [{"type": "command", "command": _hook_command("claude"), "timeout": 10}]})
+    hooks["PostToolUse"] = groups
     _write_json(path, config)
 
 
@@ -354,11 +361,12 @@ def _uninstall_claude_config(path: Path) -> None:
     hooks = config.get("hooks")
     if not isinstance(hooks, dict):
         return
-    groups = _remove_managed_groups(hooks.get("SessionStart"))
-    if groups:
-        hooks["SessionStart"] = groups
-    else:
-        hooks.pop("SessionStart", None)
+    for event in ("SessionStart", "PostToolUse"):
+        groups = _remove_managed_groups(hooks.get(event))
+        if groups:
+            hooks[event] = groups
+        else:
+            hooks.pop(event, None)
     _write_json(path, config)
 
 
@@ -409,9 +417,11 @@ def _preflight_config(home: Path, host: str) -> None:
         if events is not None and not isinstance(events, dict):
             raise ValueError("ZCode hooks.events configuration must be an object.")
         if isinstance(events, dict):
-            _remove_managed_groups(events.get("SessionStart"))
+            for event in ("SessionStart", "PostToolUse"):
+                _remove_managed_groups(events.get(event))
     else:
-        _remove_managed_groups(hooks.get("SessionStart"))
+        for event in ("SessionStart", "PostToolUse"):
+            _remove_managed_groups(hooks.get(event))
 
 
 def _tree_digest(root: Path) -> str | None:
@@ -428,7 +438,7 @@ def _tree_digest(root: Path) -> str | None:
     return digest.hexdigest()
 
 
-def _hook_count(home: Path, host: str) -> int:
+def _hook_count(home: Path, host: str, event: str) -> int:
     path = _config_path(home, host)
     if path is None or not path.exists():
         return 0
@@ -438,7 +448,7 @@ def _hook_count(home: Path, host: str) -> int:
         if not isinstance(hooks, list):
             return 0
         return sum(
-            item.get("event") == "UserPromptSubmit"
+            item.get("event") == event
             and item.get("command") == _hook_command("kimi")
             for item in hooks
             if isinstance(item, dict)
@@ -446,10 +456,10 @@ def _hook_count(home: Path, host: str) -> int:
     config = _read_json_object(path)
     if host == "zcode":
         groups = ((config.get("hooks") or {}).get("events") or {}).get(
-            "SessionStart", []
+            event, []
         )
     else:
-        groups = (config.get("hooks") or {}).get("SessionStart", [])
+        groups = (config.get("hooks") or {}).get(event, [])
     count = 0
     if isinstance(groups, list):
         for group in groups:
@@ -474,7 +484,11 @@ def _doctor(home: Path, hosts: list[str]) -> dict[str, object]:
             hook_status = "not-applicable"
             recovery = "skill-only"
         else:
-            hook_status = "ok" if _hook_count(home, host) == 1 else "missing-or-duplicate"
+            events = ("UserPromptSubmit",) if host == "kimi" else ("SessionStart", "PostToolUse")
+            hook_status = ("ok" if all(_hook_count(home, host, event) == 1
+                                       for event in events)
+                           and (host != "kimi" or _hook_count(home, host, "PostToolUse") == 0)
+                           else "missing-or-duplicate")
             recovery = "user-prompt" if host == "kimi" else "native"
         if skill_status != "ok" or hook_status not in {"ok", "not-applicable"}:
             healthy = False

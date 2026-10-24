@@ -147,7 +147,7 @@ class SessionStartHookTests(unittest.TestCase):
 
     def test_manifest_uses_plugin_root_and_registers_no_stop_hook(self) -> None:
         manifest = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
-        self.assertEqual({"SessionStart"}, set(manifest["hooks"]))
+        self.assertEqual({"SessionStart", "PostToolUse"}, set(manifest["hooks"]))
         entry = manifest["hooks"]["SessionStart"][0]
         self.assertEqual("^(startup|resume|clear|compact)$", entry["matcher"])
         command = entry["hooks"][0]["command"]

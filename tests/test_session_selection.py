@@ -47,6 +47,9 @@ class SessionSelectionTests(unittest.TestCase):
             (root / ".tasks/beta.md").write_text("Next: verify beta.\n")
             selected_b = self.run_cli(root, "activate", "--task", "beta", "--session", "session-b")
             self.assertEqual(0, selected_b.returncode, selected_b.stderr)
+            # First recovery seeds passing copies; subsequent recovery is read-only.
+            self.assertIn("verify alpha", self.hook("codex", root, "session-a"))
+            self.assertIn("verify beta", self.hook("codex", root, "session-b"))
             before = {str(p): p.read_bytes() for p in root.rglob("*") if p.is_file()}
             for host in ("codex", "claude", "zcode", "kimi"):
                 with self.subTest(host=host):
