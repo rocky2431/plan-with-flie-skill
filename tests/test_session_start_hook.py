@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from subprocess_environment import clean_environment
 from pathlib import Path
 
 
@@ -24,7 +26,7 @@ class SessionStartHookTests(unittest.TestCase):
         disabled: bool = False,
         pins: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
+        env = clean_environment()
         env["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
         env.update(pins or {})
         if disabled:
@@ -100,7 +102,7 @@ class SessionStartHookTests(unittest.TestCase):
             self.assertIn("ALPHA-ONLY", pinned.stdout)
 
     def test_non_object_event_is_silent_and_non_blocking(self) -> None:
-        env = os.environ.copy()
+        env = clean_environment()
         env["PLUGIN_ROOT"] = str(PLUGIN_ROOT)
         result = subprocess.run(
             [sys.executable, str(HOOK_PATH)],

@@ -8,6 +8,8 @@ import sys
 import tempfile
 import threading
 import unittest
+
+from subprocess_environment import clean_environment
 from unittest.mock import patch
 
 from test_current_state import CLI_PATH, CLOSE, OPEN, RUNTIME, record
@@ -152,7 +154,7 @@ class ObservationRepairTests(unittest.TestCase):
         )
         processes = [subprocess.Popen([sys.executable, '-c', source, str(CLI_PATH.parent), str(self.root)],
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      text=True) for _ in range(12)]
+                                      text=True, env=clean_environment()) for _ in range(12)]
         try:
             for process in processes:
                 self.assertEqual('ready\n', process.stdout.readline())
@@ -219,6 +221,10 @@ class MarkerAndRecoveryRepairTests(unittest.TestCase):
                 self.assertEqual(record(), copy.read_text(encoding='utf-8'))
                 path.write_text(OPEN, encoding='utf-8')
                 report = helper.run_hook(host, root, 'UserPromptSubmit' if host == 'kimi' else 'PostToolUse')
+                if host == 'claude':
+                    self.assertEqual('', report)
+                    self.assertEqual(record(), copy.read_text(encoding='utf-8'))
+                    continue
                 self.assertIn('missing their pair', report)
                 self.assertIn(copy.relative_to(root).as_posix(), report)
                 self.assertEqual(record(), copy.read_text(encoding='utf-8'))
@@ -240,7 +246,7 @@ class MarkerAndRecoveryRepairTests(unittest.TestCase):
 
 class CommandRepairTests(unittest.TestCase):
     def cli(self, root, *args, cwd=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith('TASK_STATE_')}
+        env = clean_environment()
         return subprocess.run([sys.executable, str(CLI_PATH), *args], cwd=cwd or root,
                               env=env, capture_output=True, text=True)
 
@@ -337,7 +343,7 @@ class SecondReviewRepairTests(unittest.TestCase):
 
     def check(self):
         return subprocess.run([sys.executable, str(CLI_PATH), 'check', '--file', 'tasks/fix.md',
-                               '--root', str(self.root)], capture_output=True, text=True)
+                               '--root', str(self.root)], env=clean_environment(), capture_output=True, text=True)
 
     def test_recovery_never_consumes_damage_made_outside_hooked_tools(self):
         self.assertIsNone(self.sense())

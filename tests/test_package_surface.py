@@ -11,6 +11,33 @@ SKILL_ROOT = PLUGIN_ROOT / "skills" / "task-state-with-files"
 
 
 class PackageSurfaceTests(unittest.TestCase):
+    def test_bundled_scripts_stay_importable_on_older_python(self):
+        # Hooks run the host's python3, which can be macOS's 3.9: annotations must stay lazy
+        # and nothing may need 3.11-only names such as datetime.UTC.
+        scripts = sorted((SKILL_ROOT / "scripts").glob("*.py")) + sorted((PLUGIN_ROOT / "hooks").glob("*.py"))
+        self.assertTrue(scripts)
+        for path in scripts:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("from __future__ import annotations", text, path.name)
+            self.assertNotRegex(text, r"from datetime import[^\n]*\bUTC\b", path.name)
+
+    def test_claude_zcode_share_registration_with_opposite_host_guards(self):
+        config = json.loads((PLUGIN_ROOT / 'hooks/hooks.json').read_text(encoding='utf-8'))
+        self.assertEqual({'SessionStart', 'PostToolUse', 'Stop'}, set(config['hooks']))
+        post = config['hooks']['PostToolUse'][0]['hooks'][0]
+        stop = config['hooks']['Stop'][0]['hooks'][0]
+        self.assertIn('if [ -n "${ZCODE_PLUGIN_ROOT:-}" ]', post['command'])
+        self.assertNotIn('--host claude', post['command'])
+        self.assertIn('if defined ZCODE_PLUGIN_ROOT', post['commandWindows'])
+        self.assertIn('--host zcode', post['commandWindows'])
+        self.assertIn('if [ -z "${ZCODE_PLUGIN_ROOT:-}" ]', stop['command'])
+        self.assertNotIn('--host zcode', stop['command'])
+        self.assertIn('if not defined ZCODE_PLUGIN_ROOT', stop['commandWindows'])
+        self.assertIn('--host claude', stop['commandWindows'])
+        for entry in (post, stop):
+            self.assertEqual('command', entry['type'])
+            self.assertEqual(10, entry['timeout'])
+
     def test_native_manifests_share_one_skill_tree(self) -> None:
         plugin = REPO_ROOT / "plugins/task-state-with-files"
         expected = json.loads((plugin / ".codex-plugin/plugin.json").read_text())

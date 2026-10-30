@@ -10,14 +10,15 @@ import sys
 import tempfile
 import unittest
 
+from subprocess_environment import clean_environment
+
 from test_current_state import CLOSE, OPEN, RUNTIME, record
 from test_session_selection import PLUGIN, SCRIPTS
 
 
 class PostToolSensorTests(unittest.TestCase):
     def run_hook(self, host, root, event='PostToolUse', *, session='owner', selected=True, disabled=False, native=False):
-        env = {k: v for k, v in os.environ.items()
-               if not k.startswith('TASK_STATE_') and not k.endswith('PLUGIN_ROOT')}
+        env = clean_environment()
         env.update(PLUGIN_ROOT=str(PLUGIN), GROK_PLUGIN_DATA=str(root / 'grok-data'))
         if selected:
             env.update(TASK_STATE_ROOT=str(root), TASK_STATE_FILE='tasks/fix.md')
@@ -58,7 +59,7 @@ class PostToolSensorTests(unittest.TestCase):
         self.assertLessEqual(len(context), 800)
 
     def test_all_hosts_deliver_report_and_keep_last_good_copy(self):
-        for host in ('claude', 'zcode', 'codex', 'grok'):
+        for host in ('zcode', 'codex', 'grok'):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
@@ -97,7 +98,7 @@ class PostToolSensorTests(unittest.TestCase):
                 self.assertEqual('', self.run_hook(host, root))
 
     def test_post_tool_sensor_uses_native_session_binding(self):
-        for host in ('claude', 'zcode', 'codex', 'grok'):
+        for host in ('zcode', 'codex', 'grok'):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
@@ -114,8 +115,8 @@ class PostToolSensorTests(unittest.TestCase):
                 self.assert_report(host, self.run_hook(host, root, selected=False))
 
     @unittest.skipIf(os.name == 'nt', 'POSIX commands; Windows variants are packaged separately')
-    def test_claude_and_zcode_manifest_commands_execute_sensor(self):
-        for host in ('claude', 'zcode'):
+    def test_zcode_manifest_command_executes_sensor(self):
+        for host in ('zcode',):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 path = root / 'tasks/fix.md'
@@ -124,6 +125,16 @@ class PostToolSensorTests(unittest.TestCase):
                 self.assertEqual('', self.run_hook(host, root, native=True))
                 path.write_text(OPEN, encoding='utf-8')
                 self.assert_report(host, self.run_hook(host, root, native=True))
+
+    def test_claude_post_tool_is_silent_and_does_not_observe(self):
+        for native in (False, True) if os.name != 'nt' else (False,):
+            with self.subTest(native=native), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                path = root / 'tasks/fix.md'
+                path.parent.mkdir()
+                path.write_text(OPEN, encoding='utf-8')
+                self.assertEqual('', self.run_hook('claude', root, native=native))
+                self.assertFalse((root / '.task-state').exists())
 
     def test_manifests_register_all_tool_sensor_with_correct_entrypoints(self):
         for relative in ('hooks/hooks.json', 'hooks/codex.json', 'hooks/grok.json'):

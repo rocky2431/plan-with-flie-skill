@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from subprocess_environment import clean_environment
 from unittest.mock import patch
 
 from test_task_state_runtime import CLI_PATH, load_runtime
@@ -231,7 +233,7 @@ class SnapshotSensorTests(unittest.TestCase):
 
 class CurrentStateCliTests(unittest.TestCase):
     def run_cli(self, root, *args, **pins):
-        env = {k: v for k, v in os.environ.items() if not k.startswith('TASK_STATE_')}
+        env = clean_environment()
         env.update(pins)
         return subprocess.run([sys.executable, str(CLI_PATH), *args, '--root', str(root)],
                               env=env, capture_output=True, text=True)

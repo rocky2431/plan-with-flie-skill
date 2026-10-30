@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from subprocess_environment import clean_environment
 from pathlib import Path
 
 
@@ -29,8 +31,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
             with self.subTest(host=host), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 self.write_state(root, "NATIVE-PACKAGE-RECOVERY")
-                env = {key: value for key, value in os.environ.items()
-                       if not key.startswith("TASK_STATE_") and not key.endswith("PLUGIN_ROOT")}
+                env = clean_environment()
                 env.update({host.upper() + "_PLUGIN_ROOT": str(plugin), "TASK_STATE_FILE": "work/task-state.md"})
                 result = subprocess.run(["/bin/sh", "-c", hook["command"]], env=env,
                     input=json.dumps({"session_id": "test-session", "cwd": str(root),
@@ -56,7 +57,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
         }
         if source is not None:
             payload["source"] = source
-        env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
+        env = clean_environment()
         env.update(pins or {})
         if disabled:
             env["TASK_STATE_DISABLED"] = "1"
@@ -87,7 +88,7 @@ class CrossHostLifecycleHookTests(unittest.TestCase):
             binding = root / session_relative_path("grok-owner")
             binding.parent.mkdir(parents=True)
             binding.write_text("work/task-state.md\n")
-            env = {k: v for k, v in os.environ.items() if not k.startswith("TASK_STATE_")}
+            env = clean_environment()
             env["GROK_PLUGIN_DATA"] = str(root / "plugin-data")
             def run(name, session="grok-owner"):
                 return subprocess.run([sys.executable, str(HOOK_PATH), "--host", "grok"],

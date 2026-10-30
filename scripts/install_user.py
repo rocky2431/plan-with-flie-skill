@@ -349,8 +349,10 @@ def _install_claude_config(path: Path) -> None:
     )
     hooks["SessionStart"] = groups
     groups = _remove_managed_groups(hooks.get("PostToolUse"))
-    groups.append({"hooks": [{"type": "command", "command": _hook_command("claude"), "timeout": 10}]})
-    hooks["PostToolUse"] = groups
+    if groups:
+        hooks["PostToolUse"] = groups
+    else:
+        hooks.pop("PostToolUse", None)
     _write_json(path, config)
 
 
@@ -484,10 +486,11 @@ def _doctor(home: Path, hosts: list[str]) -> dict[str, object]:
             hook_status = "not-applicable"
             recovery = "skill-only"
         else:
-            events = ("UserPromptSubmit",) if host == "kimi" else ("SessionStart", "PostToolUse")
+            events = (("UserPromptSubmit",) if host == "kimi" else
+                      ("SessionStart",) if host == "claude" else ("SessionStart", "PostToolUse"))
             hook_status = ("ok" if all(_hook_count(home, host, event) == 1
                                        for event in events)
-                           and (host != "kimi" or _hook_count(home, host, "PostToolUse") == 0)
+                           and (host not in {"kimi", "claude"} or _hook_count(home, host, "PostToolUse") == 0)
                            else "missing-or-duplicate")
             recovery = "user-prompt" if host == "kimi" else "native"
         if skill_status != "ok" or hook_status not in {"ok", "not-applicable"}:

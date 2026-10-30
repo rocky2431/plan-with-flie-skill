@@ -19,8 +19,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -n \"${ZCODE_PLUGIN_ROOT:-}\" ]; then python3 \"$ZCODE_PLUGIN_ROOT/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host zcode; else python3 \"${CLAUDE_PLUGIN_ROOT:?}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host claude; fi",
-            "commandWindows": "py -3 \"%CLAUDE_PLUGIN_ROOT%\\skills\\task-state-with-files\\scripts\\lifecycle_hook.py\" --host claude",
+            "command": "if [ -n \"${ZCODE_PLUGIN_ROOT:-}\" ]; then python3 \"$ZCODE_PLUGIN_ROOT/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host zcode; fi",
+            "commandWindows": "if defined ZCODE_PLUGIN_ROOT py -3 \"%ZCODE_PLUGIN_ROOT%\\skills\\task-state-with-files\\scripts\\lifecycle_hook.py\" --host zcode",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -z \"${ZCODE_PLUGIN_ROOT:-}\" ]; then python3 \"${CLAUDE_PLUGIN_ROOT:?}/skills/task-state-with-files/scripts/lifecycle_hook.py\" --host claude; fi",
+            "commandWindows": "if not defined ZCODE_PLUGIN_ROOT py -3 \"%CLAUDE_PLUGIN_ROOT%\\skills\\task-state-with-files\\scripts\\lifecycle_hook.py\" --host claude",
             "timeout": 10
           }
         ]

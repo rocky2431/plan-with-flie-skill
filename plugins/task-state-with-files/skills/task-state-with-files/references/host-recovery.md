@@ -1,14 +1,16 @@
 # Host Recovery
 
-The Skill workflow and record format are portable. Automatic behavior uses two kinds of
-host lifecycle events: recovery delivers the selected record's current state after a
-context boundary, and a post-edit check reports broken facts after a tool call. Both are
-advisory and fail open.
+The Skill workflow and record format are portable. Automatic behavior uses host
+lifecycle events: recovery delivers the selected record's current state after a context
+boundary; on Codex, ZCode, Grok and Kimi a post-edit check reports broken facts; on
+Claude Code a `Stop` hook asks once for a page after a compaction that found none, by
+returning `decision: "block"`, which keeps the turn going with that request. Recovery and
+checks are advisory, and every hook fails open: on any error it exits 0 silently.
 
 | Host | Skill location | Recovery event | Post-edit check | Output contract |
 |---|---|---|---|---|
 | Codex | Installed Plugin Skill | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` | `hookSpecificOutput.additionalContext` |
-| Claude Code | `~/.claude/skills/task-state-with-files` or the Plugin | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` (all tools) | `hookSpecificOutput.additionalContext` |
+| Claude Code | `~/.claude/skills/task-state-with-files` or the Plugin | `SessionStart(startup\|resume\|clear\|compact)` | None; with the Plugin, `Stop` asks once for a page after a compaction without one | `hookSpecificOutput.additionalContext`; the `Stop` request is `{"decision": "block", "reason": ...}` |
 | ZCode | `~/.zcode/skills/task-state-with-files` or the Plugin | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` (delivery unverified) | `hookSpecificOutput.additionalContext` |
 | Kimi Code | `$KIMI_CODE_HOME/skills/task-state-with-files` (default `~/.kimi-code`) | `UserPromptSubmit` | Same `UserPromptSubmit`, before recovery text | plain stdout |
 | Hermes | `~/.hermes/skills/task-state-with-files` | Skill-only | manual `check` | manual `read` |
@@ -19,7 +21,7 @@ advisory and fail open.
 All adapters require a launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or an
 explicit binding for the native session ID in the hook event. With neither, they do
 not recover or check records even when a legacy file, one record or several records
-exist. Claude Code can report an unselected record write as described below. `TASK_STATE_ROOT`
+exist. `TASK_STATE_ROOT`
 pins an exact workspace; otherwise the selected record is found from the event's `cwd`,
 stopping at a task marker or Git boundary. Set these in the host's launch environment;
 changing a child tool shell's environment does not change the already-running host.
@@ -33,8 +35,10 @@ python3 "<skill-dir>/scripts/task_state.py" deactivate --session <native-session
 
 Each workspace stores separate `.task-state/sessions/<session-hash>.ref` files; do not
 commit them. Bindings written by earlier versions under `.tasks/.sessions/` are still
-honored. A different record requires deactivation first, and a new session selects its
-own record. Launch selectors take precedence over a saved session binding; supplying
+honored. Switching `activate` to a different record requires deactivation first, and a
+new session selects its own record. `init --session <id>` selects the record it creates
+or finds and replaces a selection whose page no longer exists; when the session selects
+another existing record, it keeps that selection and prints the switch commands. Launch selectors take precedence over a saved session binding; supplying
 both task and file is invalid. No selector ever falls back after an error. A root pin
 alone is not activation. Legacy file/binding and unique-record discovery remain
 available only to deliberate CLI `read`/`resolve`/`check`, not to hooks.
@@ -76,9 +80,11 @@ block within the 3,000-character limit plus its header stays far below the
 3,000 characters, within the configured Codex limit; repetitive or emoji-heavy text can
 use more tokens.
 
-## Post-edit check
+## Post-edit check (Codex, ZCode, Grok, Kimi)
 
-After each tool call (on Kimi, before each user message), the check reads the selected
+Claude Code does not run this check; its recovery stores a passing copy when it
+delivers the page. After each tool call (on Kimi, before each user message), the check
+reads the selected
 record and the version it last saw. When they are equal it writes nothing and prints
 nothing; the cost is reading those two files. A changed record is checked for three facts:
 
@@ -107,38 +113,24 @@ in the record. Records without markers are copied but never reported for missing
 markers. The check knows nothing about whether a statement is stale; keeping the current
 state true remains the model's job.
 
-## Claude Code writing reminders
+## Claude Code page backstop
 
-Claude Code's existing `PostToolUse` path also reports two conditions, without blocking
-or writing the record. Other hosts do not run these sensors. Both skip events carrying
-`agent_id`, honor `TASK_STATE_DISABLED=1`, and stay silent on errors. Each reminder is
-at most 800 characters excluding the complete activation command line, shortens
-displayed paths to 150 characters, and shares `additionalContext` with any damage report.
-
-For a selected record, the hook reads at most the last 1 MiB of the event's readable
-`transcript_path`. It sums `input_tokens`, `cache_read_input_tokens` and
-`cache_creation_input_tokens` from the last assistant message's usage, skipping
-`<synthetic>` messages and zero totals within the same tail. If no usable assistant
-usage remains, it stays silent and leaves the baseline unchanged. The first
-observation establishes a baseline; growth of at least 100,000 tokens reports once
-until the record text changes or context size falls below the baseline. Either resets
-the baseline without reporting.
-Per-session digests, baselines and report flags live in `.task-state/context-growth/`.
-This measures growth since the record last changed or context last shrank, not distance
-from compaction: compaction may happen at any time. The reminder asks for current-state and, where required,
-History updates if the owner's wording, decisions, corrections, evidence, progress or
-next step changed.
-
-For an unselected session, `Write`, `Edit` and `MultiEdit` of an existing file with
-exactly one valid marker pair report that recovery will not deliver it. The reminder
-prints an activation command using the package's absolute script path, the event's
-session ID, and the same root discovery as the CLI (including `TASK_STATE_ROOT`).
-Files outside that root are ignored. Ignore the reminder if the file belongs to a
-different task. A once-per-session/file claim lives in `CLAUDE_PLUGIN_DATA`, which
-Claude Code exports to plugin hook processes
-([plugin reference](https://code.claude.com/docs/en/plugins-reference#environment-variables)).
-Without that directory, the sensor stays silent; it never creates `.task-state/` just
-to remember an unselected write.
+With the Plugin, `SessionStart(compact)` records a marker for the session under
+`$CLAUDE_PLUGIN_DATA/task-state/compacted/` when it finds no selected page (never for
+subagent events). At the end of a turn, `Stop` removes the marker if a page is now
+selected; otherwise the process that removes it returns `{"decision": "block", "reason":
+...}` once. The reason states that the session was compacted without a page, names the
+transcript path when the event has one, and gives two exact commands with `--session` and
+`--root`: `init` with a `<UTC date>-<first 8 characters of the session ID>` task ID and an
+`[unfilled]` intent, and `deactivate` then `activate --file` for an existing page (the
+`deactivate` only clears a selection that no longer resolves). An UltraGoal goal or
+another record that already holds the task's state is a reason to say so and end the
+turn. Only a selection that resolves to an existing record counts as selected. The hook
+is silent when `stop_hook_active` is true, for subagent events, when disabled, without
+plugin data, or on any error, and it asks again only after the next compaction without a
+page. Hooks registered by the user installer receive no `CLAUDE_PLUGIN_DATA`, so installer
+users get recovery but not this request. The request uses `Stop` because a `Stop` block
+reason reaches the model through gateways that drop hook text attached to tool results.
 
 ## Verification boundary
 
@@ -150,14 +142,17 @@ particular installed host's end-to-end delivery after context compaction.
 To establish that installed behavior, use an authorized disposable task, write a
 recognizable intent, correction and unfinished check into the current-state block,
 trigger the host's real compaction or resume boundary, and inspect whether the next
-model request receives and uses the block. For the post-edit check, damage the markers
+model request receives and uses the block. On Claude Code, also compact a session that
+has no selected page and confirm that the next turn ends with the page request. For the
+post-edit check, damage the markers
 with a tool call and observe whether the report reaches the model. Record host version,
 event, selected record, and observed behavior. A fresh agent reading a generated hook
 packet is a behavioral exercise, not that native lifecycle test.
 
 For missing recovery, inspect selection with `resolve`, read with `read`, then check the
-installed hook and host event/output contract. Do not compensate by adding a Stop hook,
-heartbeat, or per-model-step injector. Hermes uses this package's manual path. Codex runs
+installed hook and host event/output contract. Do not compensate by adding further Stop
+hooks, heartbeats, or per-model-step injectors; Claude Code's `Stop` hook only asks for
+a missing page after compaction. Hermes uses this package's manual path. Codex runs
 plugin hooks only after the user trusts the current hook definition.
 
 ## Kimi Code

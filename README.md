@@ -2,21 +2,23 @@
 
 Task State with Files gives coding agents a durable working record for tasks that
 outlive a context window or move to another agent. Each record has a short
-current-state block (what is true now and what comes next) and an append-only
+current-state block (the confirmed intent, conclusions with their evidence, work already
+done, and what comes next) and an append-only
 history (user words, decisions, corrections, evidence). Work can resume from the
 project files instead of relying on chat history.
 
 It runs as a portable Skill with Python scripts. Agents write the record with their
 normal editing tools. Codex, Claude Code, Kimi Code, zCode and Grok Build can also load
-small hooks that deliver the current-state block after a context boundary and check
-the record after each edit, keeping the last three good copies. The hooks report; they never
-block. Hermes uses the same Skill with manual reading. The host still provides the
+small hooks that deliver the current-state block after a context boundary. Codex, Kimi
+Code, zCode and Grok Build also check the record after each edit, keeping the last three
+good copies; those checks report and never block. On Claude Code, a hook asks once at the
+end of a turn for a record after a compaction that found none. Hermes uses the same Skill with manual reading. The host still provides the
 model, tools, and execution; this package only locates, checks and restores task state.
 
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.8.0. The implementation uses the Python standard library.
+Version: 0.9.0. The implementation uses the Python standard library.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
@@ -117,7 +119,7 @@ python3 "<skill-dir>/scripts/task_state.py" resolve --task 2026-10-24-export-rea
 
 | Part | What belongs there |
 |---|---|
-| Current-state block | Only what is true now: intended outcome, constraints and authority in force, progress, next action, open owner decisions |
+| Current-state block | Only what is true now: confirmed intent with constraints and authority in force, conclusions in force with evidence, done work with evidence, next action, open owner decisions |
 | History | Appended entries: the user's exact words, decisions and rejected options, corrections with evidence, verification commands and results, handoffs |
 
 The block is rewritten in place as facts change and stays short enough to be
@@ -168,7 +170,7 @@ records stay readable through `read --file` but are not selected automatically.
 | Host | Installation | Recovery event | Post-edit check | Context output |
 |---|---|---|---|---|
 | Codex | Marketplace plugin | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` | `additionalContext` |
-| Claude Code | Native plugin | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` | `additionalContext` |
+| Claude Code | Native plugin | `SessionStart(startup\|resume\|clear\|compact)` | None; `Stop` asks once for a record after a compaction without one | `additionalContext`; `Stop` uses `decision`/`reason` |
 | zCode | Native plugin | `SessionStart(startup\|resume\|clear\|compact)` | `PostToolUse` (unverified) | `additionalContext` |
 | Kimi Code | Native plugin or user Skill and hook | `UserPromptSubmit` | Same `UserPromptSubmit` | Plain stdout |
 | Grok Build | Native plugin | First `PostToolUse` after a boundary | Later `PostToolUse` (unverified) | `additionalContext` |
@@ -181,7 +183,7 @@ command. A broken or oversized block delivers only the problem and the path. Rec
 without the block keep the earlier behavior: the whole note within 8,000 characters,
 otherwise a labeled partial preview made from whole sections.
 
-After each tool call (on Kimi, before each user message), the check compares the
+On Codex, zCode and Grok after each tool call (on Kimi, before each user message), the check compares the
 selected record with the version it last saw. A changed record is checked for one
 marker pair, a block within the delivery limit, and, in `tasks/` or legacy `.tasks/`
 records, earlier history entries still present in order (blank lines, headings and
@@ -189,16 +191,16 @@ comments ignored). The last three passing versions are kept in `.task-state/snap
 A problem is reported once, with those copies; if the change was intended, later edits
 are compared with it. Nothing is blocked.
 
-Claude Code also reminds when context grows by 100,000 tokens without a record change
-(once, then again only after the record changes or context shrinks, as at compaction),
-or when `Write`, `Edit` or `MultiEdit` writes a file with valid current-state
-markers while the session has no selected record. The latter gives an activation
-command and requires the plugin's data directory. Both are advisory, skip subagents,
-and leave record content to the agent. Other hosts do not report these conditions.
+Claude Code does not run the post-edit check. With the plugin, a compaction that finds
+no selected record leaves a marker, and the end of the next turn returns
+`decision: block` once with two exact commands: `init --session` to create and select a
+record, or `deactivate` then `activate` to select an existing one. Hooks registered by the user installer
+receive no plugin data directory, so installer users get recovery without this request.
 
 Hooks need an explicit launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or
-this native session's saved selection. Existing files alone never activate hooks.
-To select the record for a running session, use its actual native session ID:
+this native session's saved selection. Existing files alone never activate recovery.
+`init --session <id>` selects the record it creates; to select an existing record for a
+running session, use its actual native session ID:
 
 ```bash
 python3 "<skill-dir>/scripts/task_state.py" activate \
@@ -213,8 +215,7 @@ Use `--file` for an existing business record. Selections and snapshots live in
 host cannot expose that identity, use the launch environment or manual `read`.
 Changing a child shell's environment cannot change its already-running parent host.
 
-Unselected hooks do not recover or check old files; Claude Code can report an
-unselected write as above. Invalid
+Unselected hooks do not recover or check old files. Invalid
 explicit selections return a bounded diagnostic without falling back. Set
 `TASK_STATE_DISABLED=1` for an unrelated one-shot invocation that should not load
 task state.

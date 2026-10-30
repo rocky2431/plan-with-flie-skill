@@ -3,14 +3,14 @@
 The package gives an agent a durable working record and a way to find, check and
 recover it. Meaning belongs to the agent: what is true, what to record, what to do
 next. The package handles only facts and consequences: discovery, containment, file
-selection, a post-edit fact check, a last good copy, and bounded recovery. It reports
-and never blocks.
+selection, a post-edit fact check, a last good copy, and bounded recovery. Claude Code
+also requests a page once when a compacted session is about to stop without one.
 
 ## Design principle
 
-Machines handle facts and consequences and only report; the model keeps meaning,
-wording and route. Nothing is blocked except irreversible effects, and damage is made
-recoverable instead of prevented. This follows two observed failures:
+Machines handle facts and consequences; the model keeps meaning, wording and route.
+Record damage is made recoverable instead of prevented. The Claude Code Stop backstop
+blocks once to request a page, without deciding its content. This follows two observed failures:
 
 - An agent rewrote a task record eight times with generated string-replacement scripts
   without re-reading it. Stale and duplicated statements accumulated, one empty-string
@@ -37,6 +37,10 @@ One task has one record with two parts:
 
 Separating the two keeps the delivered state small and current while preserving why it
 changed. Field names inside the block are free; nothing depends on headings or language.
+The template starts with Intent (including constraints and authority), Conclusions in
+force, Done, do not redo, Next, and Open owner decisions. Conclusions and completed work
+carry evidence references to files, command output or the existing session transcript;
+the package does not copy conversations.
 A borrowed document (for example a Deep Thinking `THOUGHTS.md`) wraps its own
 current-state section in the same markers and keeps its structure.
 
@@ -66,6 +70,15 @@ A `tasks/` folder without that line belongs to the project, so `init --task` ref
 and the agent supplies `--file`. `init --file` creates a record at an explicit path.
 Legacy `.tasks/<task-id>.md` records are still resolved when `tasks/<task-id>.md` does
 not exist. Completed records move to `tasks/archive/` and remain readable with `--file`.
+Task IDs contain 1–64 lowercase letters, digits or hyphens and start with a letter
+or digit; `readme` is reserved case-insensitively.
+
+`init --session <id>` selects the created or existing record. A missing, invalid or
+dangling session selection is replaced. A selection resolving to another existing
+record is kept: stdout still contains only the initialized page's path, while one
+stderr line gives exact deactivate and activate commands. `activate` retains its
+strict refusal to switch without deactivation. Session IDs never default from the
+environment; omitting `--session` from `init` preserves its earlier behavior.
 
 An explicit `--root` (or `TASK_STATE_ROOT`) pins the exact workspace. Otherwise discovery
 walks ancestors from the current directory, stopping at the first task marker
@@ -110,8 +123,8 @@ continuation or external effects. `TASK_STATE_DISABLED=1` suppresses adapter out
 
 ## Post-edit check and last good copy
 
-After each tool call (on Kimi, before each user message, because Kimi's `PostToolUse`
-is observational) the adapters compare the selected record with the version they last
+After each tool call on Codex, zCode and Grok (on Kimi, before each user message,
+because Kimi's `PostToolUse` is observational) the adapters compare the selected record with the version they last
 saw. Equal versions produce no writes and no output. A changed record is checked for
 three facts: one marker pair outside code fences, a block within the limit, and, for
 records under `tasks/` or `.tasks/`, earlier History entries still present in order,
@@ -139,37 +152,39 @@ newest passing copy, reports every current problem, and changes nothing unless i
 Hooks require a launch selection or this native session's explicit binding at
 `.task-state/sessions/<session-hash>.ref`, created by `activate` and removed by
 `deactivate`. Bindings under the earlier `.tasks/.sessions/` path are still honored.
-`.task-state/` holds only local runtime state (bindings, snapshots and context-growth
-baselines), contains a `.gitignore` of `*`, and is never committed. Launch selectors override a binding; task
+`.task-state/` holds only local runtime state (bindings and snapshots), contains a
+`.gitignore` of `*`, and is never committed. Launch selectors override a binding; task
 plus file is invalid. Hooks never use legacy or unique-record discovery without a
-selection. Unselected hooks do not recover or check old files, even when ambiguous;
-Claude Code's unselected-write reminder is the exception described below.
+selection. Unselected hooks do not recover or check old files, even when ambiguous.
 
-## Claude Code PostToolUse reminders
+## Claude Code page backstop
 
-Only Claude Code adds two report-once sensors to the existing `PostToolUse` path.
-`claude_post_tool_sensors.py` reuses the runtime's selection, root discovery,
-containment and marker parsing. It never writes record content, skips subagent events
-carrying `agent_id`, and fails silently. Reminders use the same `additionalContext`
-payload as any damage report. Reminder text is at most 800 characters, excluding
-the complete selection command line; displayed paths are shortened to 150 characters.
+`claude_page_backstop.py` reuses the recovery resolver. Only a `found` result counts
+as a selected page. On `SessionStart(source=compact)`, with no selected page, it creates
+`$CLAUDE_PLUGIN_DATA/task-state/compacted/<sha256 of session id>`. A selected page creates
+no marker, so archiving and deactivating it later in the same turn does not cause a block.
 
-The growth sensor reads at most the last 1 MiB of the transcript and sums input,
-cache-read input and cache-creation input tokens from the last assistant message's
-usage, skipping `<synthetic>` messages and zero totals within the same tail. A
-per-session record digest, token baseline and reported flag live under
-`.task-state/context-growth/`. The first observation, a record change, or a size below
-the baseline resets the episode without a report. Growth of at least 100,000 tokens
-reports once, asking for an update if anything changed; it does not predict compaction.
-Missing assistant usage in the bounded tail produces no report.
+At Stop, no marker means silence. With a marker, the process unlinks it; only the
+successful consumer may emit `{"decision": "block", "reason": "..."}` when no page is
+selected. A page selected since compaction consumes the marker silently. The reason
+states what happened, points to the transcript path when supplied, and requests either
+creation and selection with a UTC date and session-prefix task ID, selection of an
+existing page, or acknowledgment that another record already owns the state. It asks
+the model to fill every template field, without inspecting or editing page content.
+Unfilled selected pages count as selected. The next compaction without a page re-arms
+the request; otherwise it does not repeat.
 
-The selection sensor recognizes `Write`, `Edit` and `MultiEdit` of a file containing
-exactly one valid current-state pair while the session has no binding or launch
-selection. It prints a complete activation command with the event's native session
-ID and the CLI's discovered or pinned root, and tells the model to ignore files for
-other tasks. Files outside that root are ignored. Once-claims live in the plugin's
-`CLAUDE_PLUGIN_DATA` directory; without it the sensor stays silent. It does not create
-workspace runtime directories for unselected sessions.
+Subagent events carrying `agent_id`, active Stop hooks, disabled invocations, missing
+plugin data, unusable session IDs, malformed input and errors leave markers untouched
+and exit silently. A usable session ID matches `[A-Za-z0-9_-]+`. Prose is capped at
+1,200 characters excluding the two complete command lines; a transcript path too long
+to fit is left out and the request is still made. The existing-page command runs
+`deactivate` before `activate`, which only clears a binding that no longer resolves.
+
+Native Claude Code and zCode share `hooks/hooks.json`. SessionStart retains both
+hosts' recovery. Stop runs only when `ZCODE_PLUGIN_ROOT` is empty; PostToolUse runs
+only when it is set. Claude Code has no post-edit or context-growth sensors and pays
+only a no-op shell per tool call. Other hosts retain their existing checks.
 
 ## Handoffs and concurrent work
 
@@ -186,8 +201,10 @@ record merge.
 ## Installation and validation
 
 Each non-Codex host gets an independent copy of the Skill. Kimi configuration uses a
-marker-delimited managed TOML block with one `UserPromptSubmit` hook; Claude Code and
-ZCode use managed SessionStart and PostToolUse hook groups. The installer retains foreign entries, stages replacement
+marker-delimited managed TOML block with one `UserPromptSubmit` hook; zCode uses managed
+SessionStart and PostToolUse hook groups. Claude Code receives only SessionStart;
+reinstallation removes its earlier managed PostToolUse while preserving foreign hooks.
+Installer users have recovery but no Stop backstop. The installer retains foreign entries, stages replacement
 writes, and backs up existing files. `doctor` compares the installed Skill tree and
 expected managed hooks.
 
@@ -197,6 +214,6 @@ contracts, and reversible installation in temporary homes. Fresh-context behavio
 exercises can test whether a receiver uses a record correctly, but they do not
 substitute for a real installed-host compaction/resume run.
 
-The package has no Stop hook, heartbeat, semantic completion gate, full-transcript scan,
-or automatic continuation. A record supports task execution; successful recovery and a
+The package has no heartbeat, semantic completion gate, full-transcript scan,
+conversation ledger or automatic continuation. A record supports task execution; successful recovery and a
 completed checklist do not themselves establish the user's outcome.

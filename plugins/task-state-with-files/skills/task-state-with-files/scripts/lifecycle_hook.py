@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore task state through supported non-blocking host lifecycle hooks."""
+"""Recover task state and adapt supported host lifecycle events."""
 
 from __future__ import annotations
 
@@ -10,16 +10,15 @@ import os
 from pathlib import Path
 import sys
 
-from task_state_runtime import recovery_context_from_root, sense_selected_record
-
-
 SESSION_START_SOURCES = {"startup", "resume", "clear", "compact"}
 
 
 def _event_is_supported(host: str, event: dict[str, object]) -> bool:
     event_name = event.get("hook_event_name")
     if event_name == "PostToolUse":
-        return host != "kimi"
+        return host not in {"kimi", "claude"}
+    if host == "claude" and event_name == "Stop":
+        return True
     if host == "grok":
         return event_name == "PostToolUse"
     if host == "kimi":
@@ -27,6 +26,7 @@ def _event_is_supported(host: str, event: dict[str, object]) -> bool:
         return event_name == "UserPromptSubmit"
     return (
         event_name == "SessionStart"
+        and isinstance(event.get("source"), str)
         and event.get("source") in SESSION_START_SOURCES
     )
 
@@ -45,6 +45,8 @@ def _emit(host: str, context: str, event_name: str) -> None:
 
 
 def _load_context(cwd: str, session_id: str | None) -> str | None:
+    from task_state_runtime import recovery_context_from_root
+
     return recovery_context_from_root(
         Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"),
         task=os.environ.get("TASK_STATE_TASK"), state_file=os.environ.get("TASK_STATE_FILE"),
@@ -65,7 +67,7 @@ def main() -> int:
 
     try:
         event = json.load(sys.stdin)
-    except (json.JSONDecodeError, UnicodeError):
+    except (OSError, json.JSONDecodeError, UnicodeError):
         return 0
     if not isinstance(event, dict):
         return 0
@@ -96,22 +98,27 @@ def main() -> int:
 
     session_id = event.get("sessionId" if args.host == "grok" else "session_id")
     event_name = event.get("hook_event_name")
+    if args.host == "claude":
+        try:
+            from claude_page_backstop import page_backstop
+
+            response = page_backstop(Path(cwd), event)
+        except Exception:
+            # The backstop must never cost the host its recovery.
+            response = None
+        if event_name == "Stop":
+            if response:
+                print(response)
+            return 0
     sensor = None
     if event_name == "PostToolUse" or args.host == "kimi":
+        from task_state_runtime import sense_selected_record
+
         sensor = sense_selected_record(
             Path(cwd), root_pin=os.environ.get("TASK_STATE_ROOT"),
             task=os.environ.get("TASK_STATE_TASK"), state_file=os.environ.get("TASK_STATE_FILE"),
             session_id=session_id,
         )
-        if args.host == "claude" and event_name == "PostToolUse":
-            try:
-                from claude_post_tool_sensors import sense_claude_post_tool
-
-                reminder = sense_claude_post_tool(Path(cwd), event)
-            except Exception:
-                reminder = None
-            if reminder:
-                sensor = sensor + "\n\n" + reminder if sensor else reminder
         if event_name == "PostToolUse" and (args.host != "grok" or marker.exists()):
             if sensor:
                 _emit(args.host, sensor, event_name)

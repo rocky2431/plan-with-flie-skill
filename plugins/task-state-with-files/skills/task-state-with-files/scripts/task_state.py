@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shlex
 import sys
 
 from task_state_runtime import (
@@ -25,6 +26,7 @@ from task_state_runtime import (
     parse_current_state,
     resolve_relative_target,
     resolve_state,
+    selected_record_from_root,
     session_relative_path,
     task_record_relative_path,
     task_relative_path,
@@ -90,6 +92,9 @@ def command_init(args: argparse.Namespace) -> int:
     if not objective:
         print("Objective must not be empty.", file=sys.stderr)
         return 2
+    if args.session is not None and not args.session.strip():
+        print("Supply the actual non-empty native session ID.", file=sys.stderr)
+        return 2
 
     if args.task is not None:
         relative = task_record_relative_path(root, args.task)
@@ -113,6 +118,7 @@ def command_init(args: argparse.Namespace) -> int:
             print(f"Cannot initialize task state: {resolution.message}", file=sys.stderr)
             return 2
         if resolution.status == "found":
+            _select_initialized(args, root, resolution.relative_path)
             print(resolution.relative_path)
             return 0
 
@@ -122,6 +128,7 @@ def command_init(args: argparse.Namespace) -> int:
             if existing.status != "found":
                 raise ValueError(existing.message)
             ensure_runtime_directory(root)
+            _select_initialized(args, root, relative)
             print(relative)
             return 0
 
@@ -139,8 +146,35 @@ def command_init(args: argparse.Namespace) -> int:
             print("Task state appeared concurrently but is not usable.", file=sys.stderr)
             return 2
     ensure_runtime_directory(root)
+    _select_initialized(args, root, relative)
     print(relative)
     return 0
+
+
+def _select_initialized(args: argparse.Namespace, root: Path, relative: str) -> None:
+    if args.session is None:
+        return
+    try:
+        selected = selected_record_from_root(root, root_pin=str(root), session_id=args.session)
+    except (OSError, UnicodeError, RuntimeError):
+        selected = None
+    if selected is not None and selected.status == "found":
+        if selected.path != resolve_relative_target(root, relative).path:
+            common = [f"--session={args.session}", "--root", str(root)]
+            cli = ["python3", str(Path(__file__).resolve())]
+            deactivate = shlex.join([*cli, "deactivate", *common])
+            activate = shlex.join([*cli, "activate", "--file", relative, *common])
+            print(f"Session keeps {selected.relative_path}; to switch, run {deactivate} && {activate}", file=sys.stderr)
+        return
+    # Replace an unresolved binding without following its leaf symlink.
+    binding = Path(session_relative_path(args.session))
+    (_destination(root, binding.parent.as_posix()) / binding.name).unlink(missing_ok=True)
+    try:
+        legacy = Path(legacy_session_relative_path(args.session))
+        (_destination(root, legacy.parent.as_posix()) / legacy.name).unlink(missing_ok=True)
+    except (OSError, RuntimeError, ValueError):
+        pass
+    command_activate(argparse.Namespace(root=str(root), session=args.session, task=None, file=relative), announce=False)
 
 
 def command_bind(args: argparse.Namespace) -> int:
@@ -175,7 +209,7 @@ def command_bind(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_activate(args: argparse.Namespace) -> int:
+def command_activate(args: argparse.Namespace, *, announce: bool = True) -> int:
     if args.task is None and args.file is None:
         raise ValueError("Activation requires --task or --file; automatic discovery is only for read/resolve.")
     selected = _selection(args)
@@ -197,7 +231,8 @@ def command_activate(args: argparse.Namespace) -> int:
     ensure_runtime_directory(selected.root)
     if not _write_new(binding, expected) and binding.read_text(encoding="utf-8") != expected:
         raise ValueError("This session selected another record. Deactivate it before switching.")
-    print(relative)
+    if announce:
+        print(relative)
     return 0
 
 
@@ -275,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init", help="Create a task record once without overwriting existing work")
     init_parser.add_argument("--objective", required=True)
     _add_selection(init_parser)
+    init_parser.add_argument("--session", help="Select the initialized record for this native session")
     init_parser.set_defaults(handler=command_init)
 
     bind_parser = subparsers.add_parser("bind", help="Bind a repository-shared state file")

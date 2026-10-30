@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from subprocess_environment import clean_environment
+
 
 PLUGIN = Path(__file__).resolve().parents[1] / "plugins/task-state-with-files"
 SCRIPTS = PLUGIN / "skills/task-state-with-files/scripts"
@@ -16,12 +18,12 @@ CLI = SCRIPTS / "task_state.py"
 
 class SessionSelectionTests(unittest.TestCase):
     def run_cli(self, root, *args):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("TASK_STATE_")}
+        env = clean_environment()
         return subprocess.run([sys.executable, str(CLI), *args, "--root", str(root)],
                               env=env, capture_output=True, text=True)
 
     def hook(self, host, root, session, **pins):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("TASK_STATE_")}
+        env = clean_environment()
         env.update(pins, PLUGIN_ROOT=str(PLUGIN))
         command = ([str(PLUGIN / "hooks/session_start.py")] if host == "codex" else
                    [str(SCRIPTS / "lifecycle_hook.py"), "--host", host])

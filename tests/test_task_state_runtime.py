@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+from subprocess_environment import clean_environment
 from pathlib import Path
 
 
@@ -290,7 +292,7 @@ class TaskStateCliTests(unittest.TestCase):
             [sys.executable, str(CLI_PATH), *args, "--root", str(root)],
             text=True,
             capture_output=True,
-            env={key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")},
+            env=clean_environment(),
             check=False,
         )
 
@@ -371,7 +373,7 @@ class TaskStateCliTests(unittest.TestCase):
             (root / ".tasks").mkdir()
             (root / ".tasks" / "selected.md").write_text("selected task\n", encoding="utf-8")
             (root / "another file.md").write_text("explicit file\n", encoding="utf-8")
-            env = {key: value for key, value in os.environ.items() if not key.startswith("TASK_STATE_")}
+            env = clean_environment()
             env.update(TASK_STATE_ROOT=str(root), TASK_STATE_TASK="selected")
             for args, expected in (([], "selected task\n"), (["--file", "another file.md"], "explicit file\n")):
                 with self.subTest(args=args):

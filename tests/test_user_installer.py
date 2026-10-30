@@ -7,6 +7,8 @@ import sys
 import tempfile
 import tomllib
 import unittest
+
+from subprocess_environment import clean_environment
 from pathlib import Path
 
 
@@ -24,7 +26,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             state.write_text(json.dumps({"plugins": {"task-state-with-files@market": [{"scope": "user"}]}}))
             before = state.read_bytes()
             result = subprocess.run([sys.executable, str(INSTALLER), "install", "--home", str(home),
-                "--hosts", "claude"], capture_output=True, text=True)
+                "--hosts", "claude"], env=clean_environment(), capture_output=True, text=True)
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("already owns", result.stderr)
             self.assertEqual(state.read_bytes(), before)
@@ -49,6 +51,7 @@ class CrossHostUserInstallerTests(unittest.TestCase):
             ],
             text=True,
             capture_output=True,
+            env=clean_environment(),
             check=False,
         )
 
@@ -278,7 +281,7 @@ event = "PostCompact"
 command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
 # END task-state-with-files managed hooks
 ''')
-            env = {**os.environ, "KIMI_CODE_HOME": str(custom)}
+            env = clean_environment(KIMI_CODE_HOME=str(custom))
             args = [sys.executable, str(INSTALLER), "install", "--home", str(home), "--hosts", "kimi"]
             for _ in range(2):
                 install = subprocess.run(args, env=env, capture_output=True, text=True)
@@ -316,6 +319,9 @@ command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
                 data = json.loads(path.read_text())
                 events = data['hooks']['events'] if path.name == 'config.json' else data['hooks']
                 events['PostToolUse'] = [foreign]
+                if path.name == 'settings.json':
+                    events['PostToolUse'].append({'hooks': [{'type': 'command', 'command':
+                        'python3 task-state-with-files/scripts/lifecycle_hook.py --host claude'}]})
                 path.write_text(json.dumps(data))
             kimi = home / '.kimi-code/config.toml'
             kimi.write_text('theme = "dark"\n[[hooks]]\nevent = "PostToolUse"\ncommand = "echo foreign-kimi"\n')
@@ -325,6 +331,17 @@ command = "python3 task-state-with-files/scripts/lifecycle_hook.py --host kimi"
             for path in configs:
                 data = json.loads(path.read_text())
                 events = data['hooks']['events'] if path.name == 'config.json' else data['hooks']
+                if path.name == 'settings.json':
+                    self.assertEqual([foreign], events['PostToolUse'])
+                    self.assertNotIn('Stop', events)
+                    original = path.read_text()
+                    events['PostToolUse'].append({'hooks': [{'type': 'command', 'command':
+                        'python3 task-state-with-files/scripts/lifecycle_hook.py --host claude'}]})
+                    path.write_text(json.dumps(data))
+                    self.assertEqual(1, self.run_installer(home, 'doctor', '--json').returncode)
+                    self.assertEqual(0, self.run_installer(home, 'install').returncode)
+                    self.assertEqual(original, path.read_text())
+                    continue
                 self.assertEqual(2, len(events['PostToolUse']))
                 self.assertEqual(foreign, events['PostToolUse'][0])
                 managed = events['PostToolUse'][1]
