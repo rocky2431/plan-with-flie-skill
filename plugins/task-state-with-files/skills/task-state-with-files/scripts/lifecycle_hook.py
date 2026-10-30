@@ -103,6 +103,15 @@ def main() -> int:
             task=os.environ.get("TASK_STATE_TASK"), state_file=os.environ.get("TASK_STATE_FILE"),
             session_id=session_id,
         )
+        if args.host == "claude" and event_name == "PostToolUse":
+            try:
+                from claude_post_tool_sensors import sense_claude_post_tool
+
+                reminder = sense_claude_post_tool(Path(cwd), event)
+            except Exception:
+                reminder = None
+            if reminder:
+                sensor = sensor + "\n\n" + reminder if sensor else reminder
         if event_name == "PostToolUse" and (args.host != "grok" or marker.exists()):
             if sensor:
                 _emit(args.host, sensor, event_name)

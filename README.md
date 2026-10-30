@@ -16,7 +16,7 @@ model, tools, and execution; this package only locates, checks and restores task
 Use it when losing the reasoning behind the current plan would make a task expensive
 to reconstruct. A brief answer or one-step edit does not need a task record.
 
-Version: 0.7.0. The implementation uses the Python standard library.
+Version: 0.8.0. The implementation uses the Python standard library.
 
 - [Install and start](#install-and-start)
 - [Your first task](#your-first-task)
@@ -189,6 +189,13 @@ comments ignored). The last three passing versions are kept in `.task-state/snap
 A problem is reported once, with those copies; if the change was intended, later edits
 are compared with it. Nothing is blocked.
 
+Claude Code also reminds when context grows by 100,000 tokens without a record change
+(once, then again only after the record changes or context shrinks, as at compaction),
+or when `Write`, `Edit` or `MultiEdit` writes a file with valid current-state
+markers while the session has no selected record. The latter gives an activation
+command and requires the plugin's data directory. Both are advisory, skip subagents,
+and leave record content to the agent. Other hosts do not report these conditions.
+
 Hooks need an explicit launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or
 this native session's saved selection. Existing files alone never activate hooks.
 To select the record for a running session, use its actual native session ID:
@@ -206,7 +213,8 @@ Use `--file` for an existing business record. Selections and snapshots live in
 host cannot expose that identity, use the launch environment or manual `read`.
 Changing a child shell's environment cannot change its already-running parent host.
 
-Unselected hooks stay silent, including with ambiguous or invalid old files. Invalid
+Unselected hooks do not recover or check old files; Claude Code can report an
+unselected write as above. Invalid
 explicit selections return a bounded diagnostic without falling back. Set
 `TASK_STATE_DISABLED=1` for an unrelated one-shot invocation that should not load
 task state.

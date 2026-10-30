@@ -9,8 +9,9 @@ license: MIT
 Leave the next agent enough understanding to continue useful work: what the user
 wants, what is true now, what is unfinished, and why. The record is plain markdown
 that you write with your normal editing tools. The bundled scripts only locate
-records, check facts after edits, keep a last good copy, and deliver the current
-state at recovery. They never decide content and never block your work.
+records, check facts after edits, keep a last good copy, deliver the current state
+at recovery, and on Claude Code remind you when the record lags or is not selected.
+They never decide content and never block your work.
 
 ## Find or create the record
 
@@ -43,8 +44,8 @@ python3 "<skill-dir>/scripts/task_state.py" activate --file <relative-path> --se
 ```
 
 Selections live in `.task-state/sessions/`, local to this workspace and never
-committed. Unselected hooks stay silent. If the host does not expose its session ID,
-launch it with `TASK_STATE_TASK` or `TASK_STATE_FILE` (optionally `TASK_STATE_ROOT`)
+committed. Unselected hooks do not recover records. If the host does not expose its
+session ID, launch it with `TASK_STATE_TASK` or `TASK_STATE_FILE` (optionally `TASK_STATE_ROOT`)
 or read manually; changing a child shell's environment cannot change the running host.
 
 ## Keep two parts
@@ -98,7 +99,11 @@ generated scripts that compute offsets or rewrite the file; a script that misfir
 can damage the whole record without any visible error. Update it when understanding
 changes: a requirement is clarified, a hypothesis is supported or refuted, a step
 completes or blocks, verification changes what can be claimed, before a handoff or
-an intentional stop, and at reported context pressure. There is no quota.
+an intentional stop, and at reported context pressure. Claude Code reports when
+context grows by 100,000 tokens without a record change (once, then again only after
+the record changes or context shrinks, as at compaction), and when a `Write`, `Edit` or
+`MultiEdit` writes a record-shaped file with no session selection (with an activation
+command). Other hosts do not report these conditions. There is no quota.
 
 After the selected record changes, hooks compare it with the version they last saw
 and check three facts: the current-state markers form exactly one pair, the block fits

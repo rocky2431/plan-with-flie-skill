@@ -17,8 +17,9 @@ advisory and fail open.
 ## Locating the record
 
 All adapters require a launch selection (`TASK_STATE_TASK` or `TASK_STATE_FILE`) or an
-explicit binding for the native session ID in the hook event. With neither, they are
-silent even when a legacy file, one record or several records exist. `TASK_STATE_ROOT`
+explicit binding for the native session ID in the hook event. With neither, they do
+not recover or check records even when a legacy file, one record or several records
+exist. Claude Code can report an unselected record write as described below. `TASK_STATE_ROOT`
 pins an exact workspace; otherwise the selected record is found from the event's `cwd`,
 stopping at a task marker or Git boundary. Set these in the host's launch environment;
 changing a child tool shell's environment does not change the already-running host.
@@ -100,11 +101,44 @@ with the existing good copies; a persisting problem such as broken markers or a 
 that stays oversize is not repeated on every edit. Manual `check` compares with the
 newest good copy, reports every current problem, and changes nothing unless the record
 passes, so repeated checks of an unchanged record give the same answer. The
-check never blocks the tool call, edits the record, or decides meaning. Unselected
-sessions and internal errors are silent, and an unreadable copy never hides a problem
+check never blocks the tool call, edits the record, or decides meaning. The damage
+check is silent for unselected sessions and internal errors, and an unreadable copy never hides a problem
 in the record. Records without markers are copied but never reported for missing
 markers. The check knows nothing about whether a statement is stale; keeping the current
 state true remains the model's job.
+
+## Claude Code writing reminders
+
+Claude Code's existing `PostToolUse` path also reports two conditions, without blocking
+or writing the record. Other hosts do not run these sensors. Both skip events carrying
+`agent_id`, honor `TASK_STATE_DISABLED=1`, and stay silent on errors. Each reminder is
+at most 800 characters excluding the complete activation command line, shortens
+displayed paths to 150 characters, and shares `additionalContext` with any damage report.
+
+For a selected record, the hook reads at most the last 1 MiB of the event's readable
+`transcript_path`. It sums `input_tokens`, `cache_read_input_tokens` and
+`cache_creation_input_tokens` from the last assistant message's usage, skipping
+`<synthetic>` messages and zero totals within the same tail. If no usable assistant
+usage remains, it stays silent and leaves the baseline unchanged. The first
+observation establishes a baseline; growth of at least 100,000 tokens reports once
+until the record text changes or context size falls below the baseline. Either resets
+the baseline without reporting.
+Per-session digests, baselines and report flags live in `.task-state/context-growth/`.
+This measures growth since the record last changed or context last shrank, not distance
+from compaction: compaction may happen at any time. The reminder asks for current-state and, where required,
+History updates if the owner's wording, decisions, corrections, evidence, progress or
+next step changed.
+
+For an unselected session, `Write`, `Edit` and `MultiEdit` of an existing file with
+exactly one valid marker pair report that recovery will not deliver it. The reminder
+prints an activation command using the package's absolute script path, the event's
+session ID, and the same root discovery as the CLI (including `TASK_STATE_ROOT`).
+Files outside that root are ignored. Ignore the reminder if the file belongs to a
+different task. A once-per-session/file claim lives in `CLAUDE_PLUGIN_DATA`, which
+Claude Code exports to plugin hook processes
+([plugin reference](https://code.claude.com/docs/en/plugins-reference#environment-variables)).
+Without that directory, the sensor stays silent; it never creates `.task-state/` just
+to remember an unselected write.
 
 ## Verification boundary
 

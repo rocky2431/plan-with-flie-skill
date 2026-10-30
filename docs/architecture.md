@@ -139,10 +139,37 @@ newest passing copy, reports every current problem, and changes nothing unless i
 Hooks require a launch selection or this native session's explicit binding at
 `.task-state/sessions/<session-hash>.ref`, created by `activate` and removed by
 `deactivate`. Bindings under the earlier `.tasks/.sessions/` path are still honored.
-`.task-state/` holds only local runtime state (bindings and snapshots), contains a
-`.gitignore` of `*`, and is never committed. Launch selectors override a binding; task
+`.task-state/` holds only local runtime state (bindings, snapshots and context-growth
+baselines), contains a `.gitignore` of `*`, and is never committed. Launch selectors override a binding; task
 plus file is invalid. Hooks never use legacy or unique-record discovery without a
-selection, and unselected hooks are silent even when old files are ambiguous.
+selection. Unselected hooks do not recover or check old files, even when ambiguous;
+Claude Code's unselected-write reminder is the exception described below.
+
+## Claude Code PostToolUse reminders
+
+Only Claude Code adds two report-once sensors to the existing `PostToolUse` path.
+`claude_post_tool_sensors.py` reuses the runtime's selection, root discovery,
+containment and marker parsing. It never writes record content, skips subagent events
+carrying `agent_id`, and fails silently. Reminders use the same `additionalContext`
+payload as any damage report. Reminder text is at most 800 characters, excluding
+the complete selection command line; displayed paths are shortened to 150 characters.
+
+The growth sensor reads at most the last 1 MiB of the transcript and sums input,
+cache-read input and cache-creation input tokens from the last assistant message's
+usage, skipping `<synthetic>` messages and zero totals within the same tail. A
+per-session record digest, token baseline and reported flag live under
+`.task-state/context-growth/`. The first observation, a record change, or a size below
+the baseline resets the episode without a report. Growth of at least 100,000 tokens
+reports once, asking for an update if anything changed; it does not predict compaction.
+Missing assistant usage in the bounded tail produces no report.
+
+The selection sensor recognizes `Write`, `Edit` and `MultiEdit` of a file containing
+exactly one valid current-state pair while the session has no binding or launch
+selection. It prints a complete activation command with the event's native session
+ID and the CLI's discovered or pinned root, and tells the model to ignore files for
+other tasks. Files outside that root are ignored. Once-claims live in the plugin's
+`CLAUDE_PLUGIN_DATA` directory; without it the sensor stays silent. It does not create
+workspace runtime directories for unselected sessions.
 
 ## Handoffs and concurrent work
 
@@ -170,6 +197,6 @@ contracts, and reversible installation in temporary homes. Fresh-context behavio
 exercises can test whether a receiver uses a record correctly, but they do not
 substitute for a real installed-host compaction/resume run.
 
-The package has no Stop hook, heartbeat, semantic completion gate, transcript scraping,
+The package has no Stop hook, heartbeat, semantic completion gate, full-transcript scan,
 or automatic continuation. A record supports task execution; successful recovery and a
 completed checklist do not themselves establish the user's outcome.
